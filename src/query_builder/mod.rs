@@ -6,9 +6,13 @@ use sqlparser::ast::{
 };
 
 mod __tests__;
+mod alias;
 mod args;
 mod error;
+mod from;
+mod schema;
 mod select;
+mod sql;
 
 pub use error::{Error, Result};
 
@@ -16,10 +20,12 @@ pub use error::{Error, Result};
 pub struct QueryBuilder {
     pub pool: Option<DbPool>,
     pub select_items: SmallVec<[SelectItem; 4]>,
-    pub from_table: Option<TableWithJoins>,
+    pub from_tables: SmallVec<[TableWithJoins; 1]>,
     pub where_clause: Option<Expr>,
     pub params: SmallVec<[Param; 8]>,
     pub default_schema: Option<String>,
+    pub(crate) pending_schema: Option<String>,
+    pub alias: Option<String>,
 }
 
 impl QueryBuilder {
@@ -27,10 +33,12 @@ impl QueryBuilder {
         Self {
             pool: Some(pool),
             select_items: smallvec![],
-            from_table: None,
+            from_tables: smallvec![],
             where_clause: None,
             params: smallvec![],
             default_schema: schema,
+            pending_schema: None,
+            alias: None,
         }
     }
 
@@ -39,10 +47,12 @@ impl QueryBuilder {
         Self {
             pool: None,
             select_items: smallvec![],
-            from_table: None,
+            from_tables: smallvec![],
             where_clause: None,
             params: smallvec![],
             default_schema: None,
+            pending_schema: None,
+            alias: None,
         }
     }
 
@@ -66,10 +76,7 @@ impl QueryBuilder {
         };
 
         // FROM: либо один TableWithJoins, либо пусто
-        let from: Vec<TableWithJoins> = match self.from_table {
-            Some(t) => vec![t],
-            None => Vec::new(),
-        };
+        let from: Vec<TableWithJoins> = self.from_tables.into_vec();
 
         let select = Select {
             distinct: None,

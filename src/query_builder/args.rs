@@ -160,6 +160,16 @@ where
     }
 }
 
+// ОДИНОЧНЫЙ аргумент: позволяет .from("users") / .select("id") и т.п.
+impl<T> ArgList for T
+where
+    T: IntoQBArg,
+{
+    fn into_vec(self) -> Vec<QBArg> {
+        vec![IntoQBArg::into_qb_arg(self)]
+    }
+}
+
 #[inline]
 /// Удобная утилита: собрать вектор аргументов из любого итератора.
 pub fn collect_args<I, T>(items: I) -> Vec<QBArg>
