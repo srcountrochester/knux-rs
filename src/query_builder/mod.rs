@@ -1,4 +1,5 @@
 use crate::{executor::DbPool, param::Param};
+use smallvec::{SmallVec, smallvec};
 use sqlparser::ast::{
     self, Expr, GroupByExpr, Query, Select, SelectFlavor, SelectItem, TableWithJoins,
     WildcardAdditionalOptions, helpers::attached_token::AttachedToken,
@@ -14,10 +15,10 @@ pub use error::{Error, Result};
 #[derive(Debug)]
 pub struct QueryBuilder {
     pub pool: Option<DbPool>,
-    pub select_items: Vec<SelectItem>,
+    pub select_items: SmallVec<[SelectItem; 4]>,
     pub from_table: Option<TableWithJoins>,
     pub where_clause: Option<Expr>,
-    pub params: Vec<Param>,
+    pub params: SmallVec<[Param; 8]>,
     pub default_schema: Option<String>,
 }
 
@@ -25,10 +26,10 @@ impl QueryBuilder {
     pub fn new(pool: DbPool, schema: Option<String>) -> Self {
         Self {
             pool: Some(pool),
-            select_items: Vec::new(),
+            select_items: smallvec![],
             from_table: None,
             where_clause: None,
-            params: Vec::new(),
+            params: smallvec![],
             default_schema: schema,
         }
     }
@@ -37,10 +38,10 @@ impl QueryBuilder {
     pub fn new_empty() -> Self {
         Self {
             pool: None,
-            select_items: Vec::new(),
+            select_items: smallvec![],
             from_table: None,
             where_clause: None,
-            params: Vec::new(),
+            params: smallvec![],
             default_schema: None,
         }
     }
@@ -56,10 +57,10 @@ impl QueryBuilder {
         self
     }
 
-    pub(crate) fn build_query_ast(self) -> Result<(Query, Vec<Param>)> {
+    pub(crate) fn build_query_ast(self) -> Result<(Query, SmallVec<[Param; 8]>)> {
         // проекция по умолчанию: SELECT *
         let projection = if self.select_items.is_empty() {
-            vec![SelectItem::Wildcard(WildcardAdditionalOptions::default())]
+            smallvec![SelectItem::Wildcard(WildcardAdditionalOptions::default()),]
         } else {
             self.select_items
         };
@@ -73,7 +74,7 @@ impl QueryBuilder {
         let select = Select {
             distinct: None,
             top: None,
-            projection,
+            projection: projection.into_vec(),
             into: None,
             from,
             lateral_views: vec![],

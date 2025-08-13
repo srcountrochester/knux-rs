@@ -3,6 +3,7 @@ use std::fmt;
 use crate::expression::{self, Expression};
 use crate::param::Param;
 use crate::query_builder::QueryBuilder;
+use smallvec::SmallVec;
 use sqlparser::ast;
 
 use super::{Error, Result};
@@ -17,6 +18,7 @@ impl QBClosure {
         Self(Box::new(f))
     }
 
+    #[inline]
     /// Применить замыкание, потребив обёртку.
     pub fn apply(self, qb: QueryBuilder) -> QueryBuilder {
         (self.0)(qb)
@@ -44,7 +46,7 @@ pub enum QBArg {
 impl QBArg {
     /// Превратить аргумент в `ast::Expr`, если это **готовое выражение**.
     /// Для `Subquery/Closure` вернёт ошибку с пояснением.
-    pub fn try_into_expr(self) -> Result<(ast::Expr, Vec<Param>)> {
+    pub fn try_into_expr(self) -> Result<(ast::Expr, SmallVec<[Param; 8]>)> {
         match self {
             QBArg::Expr(e) => Ok((e.expr, e.params)),
             QBArg::Subquery(_) => Err(Error::InvalidExpression {
@@ -61,9 +63,12 @@ impl QBArg {
     /// `build_subquery` — функция, которая принимает `QueryBuilder`
     /// и возвращает `(ast::Query, params)`. Её предоставит сам `QueryBuilder`
     /// там, где уже есть контекст (`SELECT`, `WHERE IN (subquery)`, и т.п.).
-    pub fn resolve_into_expr_with<F>(self, build_subquery: F) -> Result<(ast::Expr, Vec<Param>)>
+    pub fn resolve_into_expr_with<F>(
+        self,
+        build_subquery: F,
+    ) -> Result<(ast::Expr, SmallVec<[Param; 8]>)>
     where
-        F: FnOnce(QueryBuilder) -> Result<(ast::Query, Vec<Param>)>,
+        F: FnOnce(QueryBuilder) -> Result<(ast::Query, SmallVec<[Param; 8]>)>,
     {
         match self {
             QBArg::Expr(e) => Ok((e.expr, e.params)),
@@ -155,6 +160,7 @@ where
     }
 }
 
+#[inline]
 /// Удобная утилита: собрать вектор аргументов из любого итератора.
 pub fn collect_args<I, T>(items: I) -> Vec<QBArg>
 where

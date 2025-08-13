@@ -1,3 +1,4 @@
+use smallvec::SmallVec;
 use sqlparser::ast::{Ident, SelectItem};
 
 use crate::{
@@ -14,22 +15,20 @@ impl QueryBuilder {
         L: ArgList,
     {
         let args = items.into_vec();
+        self.select_items.reserve(args.len());
 
         for arg in args {
             match arg {
-                // сохраняем alias у Expression
                 QBArg::Expr(e) => {
                     let (item, mut p) = Self::expr_to_select_item(e);
                     self.select_items.push(item);
                     self.params.append(&mut p);
                 }
-                // Subquery/Closure — через резолвер
                 other => {
                     if let Ok((expr_ast, mut params)) =
                         other.resolve_into_expr_with(|qb| qb.build_query_ast())
                     {
-                        self.select_items
-                            .push(sqlparser::ast::SelectItem::UnnamedExpr(expr_ast));
+                        self.select_items.push(SelectItem::UnnamedExpr(expr_ast));
                         self.params.append(&mut params);
                     }
                 }
@@ -44,13 +43,14 @@ impl QueryBuilder {
         self
     }
 
-    /// Вспомогалка: Expression (+alias) → SelectItem
-    fn expr_to_select_item(expr: crate::expression::Expression) -> (SelectItem, Vec<Param>) {
+    fn expr_to_select_item(
+        expr: crate::expression::Expression,
+    ) -> (SelectItem, SmallVec<[Param; 8]>) {
         let params = expr.params;
         let item = match expr.alias {
             Some(a) => SelectItem::ExprWithAlias {
                 expr: expr.expr,
-                alias: Ident::new(a),
+                alias: Ident::new(a.into_owned()),
             },
             None => SelectItem::UnnamedExpr(expr.expr),
         };

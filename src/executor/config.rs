@@ -73,7 +73,7 @@ impl ExecutorConfig {
         cfg.is_postgres = matches!(scheme, "postgres" | "postgresql");
 
         // собираем несколько init
-        let mut inits: Vec<String> = Vec::new();
+        let mut inits: Option<Vec<String>> = None;
 
         for (k, v) in url.query_pairs() {
             let key = k.as_ref();
@@ -105,7 +105,7 @@ impl ExecutorConfig {
                 // init SQL (многоразовый)
                 "init" => {
                     if !val.is_empty() {
-                        inits.push(val.to_string());
+                        inits.get_or_insert_with(Vec::new).push(val.to_string());
                     }
                 }
 
@@ -114,8 +114,7 @@ impl ExecutorConfig {
             }
         }
 
-        if !inits.is_empty() {
-            // соединим с '; ' чтобы было читаемо
+        if let Some(inits) = inits {
             cfg.after_connect_sql = Some(inits.join("; "));
         }
 

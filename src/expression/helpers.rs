@@ -1,5 +1,6 @@
 use super::Expression;
 use crate::param::Param;
+use smallvec::smallvec;
 use sqlparser::ast;
 
 /// Колонка: col("users.id")
@@ -12,14 +13,14 @@ pub fn col(name: &str) -> Expression {
         Expression {
             expr: ast::Expr::CompoundIdentifier(parts),
             alias: None,
-            params: vec![],
+            params: smallvec![],
             mark_distinct_for_next: false,
         }
     } else {
         Expression {
             expr: ast::Expr::Identifier(ast::Ident::new(name)),
             alias: None,
-            params: vec![],
+            params: smallvec![],
             mark_distinct_for_next: false,
         }
     };
@@ -31,7 +32,7 @@ pub fn val<T: Into<Param>>(v: T) -> Expression {
     Expression {
         expr: ast::Expr::Value(ast::Value::Number("?".into(), false).into()), // плейсхолдер
         alias: None,
-        params: vec![v.into()],
+        params: smallvec![v.into()],
         mark_distinct_for_next: false,
     }
 }
@@ -41,7 +42,7 @@ pub fn lit<S: Into<String>>(s: S) -> Expression {
     Expression {
         expr: ast::Expr::Value(ast::Value::SingleQuotedString(s.into()).into()),
         alias: None,
-        params: vec![],
+        params: smallvec![],
         mark_distinct_for_next: false,
     }
 }
@@ -54,7 +55,7 @@ where
     Expression {
         expr: build(),
         alias: None,
-        params: vec![],
+        params: smallvec![],
         mark_distinct_for_next: false,
     }
 }

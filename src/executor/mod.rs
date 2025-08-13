@@ -75,6 +75,8 @@ impl QueryExecutor {
         let life = cfg.max_lifetime;
         let test_before = cfg.test_before_acquire.unwrap_or(false);
         let init_sql_all = cfg.after_connect_sql.clone(); // init SQL для всех СУБД
+        // Не удалять! нужно для ветки postgres
+        let schema = cfg.schema.clone();
 
         // выбираем драйвер по схеме URL
         let pool = match scheme.as_str() {
@@ -94,19 +96,22 @@ impl QueryExecutor {
                     opts = opts.max_lifetime(d);
                 }
 
+                let init_sql_outer = init_sql_all.clone();
+                let schema_outer = schema.clone();
+
                 let pool = opts
                     .after_connect(move |conn, _| {
-                        let init_sql = init_sql_all.clone();
-                        let schema = schema.clone();
+                        let init_sql = init_sql_outer.clone();
+                        let schema = schema_outer.clone();
                         Box::pin(async move {
-                            if let Some(sql) = init_sql {
-                                conn.execute(sql.as_str()).await?;
+                            if let Some(sql) = init_sql.as_deref() {
+                                conn.execute(sql).await?;
                             }
                             if let Some(s) = schema {
                                 let set_path = format!("SET search_path TO {}", s);
                                 let _ = conn.execute(set_path.as_str()).await;
                             }
-                            Ok::<_, sqlx::Error>(())
+                            Ok(())
                         })
                     })
                     .connect(&url)

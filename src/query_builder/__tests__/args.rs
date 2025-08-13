@@ -2,6 +2,7 @@ use super::super::args::{ArgList, IntoQBArg, QBArg, collect_args};
 use crate::expression::helpers::col;
 use crate::param::Param;
 use crate::query_builder::{Error, QueryBuilder, Result};
+use smallvec::{SmallVec, smallvec};
 use sqlparser::ast;
 
 #[test]
@@ -80,7 +81,7 @@ fn resolve_into_expr_with_works_for_expr() {
 
 #[test]
 fn resolve_into_expr_with_for_subquery_and_closure() {
-    fn dummy_builder(_: QueryBuilder) -> Result<(ast::Query, Vec<Param>)> {
+    fn dummy_builder(_: QueryBuilder) -> Result<(ast::Query, SmallVec<[Param; 8]>)> {
         Ok((
             ast::Query {
                 with: None,
@@ -97,7 +98,7 @@ fn resolve_into_expr_with_for_subquery_and_closure() {
                 pipe_operators: vec![],
                 settings: None,
             },
-            vec![Param::I32(42)],
+            smallvec![Param::I32(42)],
         ))
     }
 

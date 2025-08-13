@@ -1,9 +1,8 @@
 use super::Expression;
 use sqlparser::ast;
 
-fn combine(op: ast::BinaryOperator, mut left: Expression, mut right: Expression) -> Expression {
-    let mut params = vec![];
-    params.append(&mut left.params);
+fn combine(op: ast::BinaryOperator, left: Expression, mut right: Expression) -> Expression {
+    let mut params = left.params;
     params.append(&mut right.params);
     Expression {
         expr: ast::Expr::BinaryOp {

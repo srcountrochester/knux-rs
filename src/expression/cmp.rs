@@ -1,9 +1,9 @@
 use super::Expression;
+use smallvec::smallvec;
 use sqlparser::ast;
 
-fn bin(op: ast::BinaryOperator, mut left: Expression, mut right: Expression) -> Expression {
-    let mut params = vec![];
-    params.append(&mut left.params);
+fn bin(op: ast::BinaryOperator, left: Expression, mut right: Expression) -> Expression {
+    let mut params = left.params;
     params.append(&mut right.params);
     Expression {
         expr: ast::Expr::BinaryOp {
@@ -42,7 +42,7 @@ impl Expression {
     where
         I: IntoIterator<Item = Expression>,
     {
-        let mut params = vec![];
+        let mut params = self.params;
         let mut exprs = vec![];
         for mut e in items.into_iter() {
             params.append(&mut e.params);
@@ -64,7 +64,7 @@ impl Expression {
     where
         I: IntoIterator<Item = Expression>,
     {
-        let mut params = vec![];
+        let mut params = self.params;
         let mut exprs = vec![];
         for mut e in items.into_iter() {
             params.append(&mut e.params);
@@ -86,7 +86,7 @@ impl Expression {
         Expression {
             expr: ast::Expr::IsNull(Box::new(self.expr)),
             alias: None,
-            params: vec![],
+            params: smallvec![],
             mark_distinct_for_next: false,
         }
     }
@@ -95,7 +95,7 @@ impl Expression {
         Expression {
             expr: ast::Expr::IsNotNull(Box::new(self.expr)),
             alias: None,
-            params: vec![],
+            params: smallvec![],
             mark_distinct_for_next: false,
         }
     }
