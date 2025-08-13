@@ -1,0 +1,54 @@
+[package]
+name = "krust"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["sqlite"]
+# default = ["postgres"]
+# default = ["mysql"]
+# базовые фичи для sqlx::Any
+sqlite = ["sqlx/sqlite"]
+postgres = ["sqlx/postgres"]
+mysql = ["sqlx/mysql"]
+# Опциональные типы
+time = ["dep:time", "sqlx/time"]
+chrono = ["dep:chrono", "sqlx/chrono"]
+serde_json = ["dep:serde_json", "sqlx/json"]
+uuid = ["dep:uuid", "sqlx/uuid"]
+rust_decimal = ["dep:rust_decimal", "sqlx/rust_decimal"]
+
+[dependencies]
+sqlx = { version = "0.8.6", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "macros",
+] }
+sqlparser = "0.58"
+thiserror = "2.0.14"
+url = "2"
+humantime = "2"
+
+# опциональные зависимости
+time = { version = "0.3", optional = true, features = ["macros", "parsing"] }
+chrono = { version = "0.4", optional = true, default-features = false, features = [
+    "clock",
+] }
+serde_json = { version = "1", optional = true }
+uuid = { version = "1", optional = true, default-features = false, features = [
+    "std",
+    "fast-rng",
+] }
+rust_decimal = { version = "1", optional = true, default-features = false, features = [
+    "serde",
+] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde = { version = "1", features = ["derive"] }
+sqlx = { version = "0.8.6", default-features = false, features = [
+    "sqlite",
+    "postgres",
+    "mysql",
+    "runtime-tokio-rustls",
+    "macros",
+] }

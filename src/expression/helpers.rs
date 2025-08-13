@@ -1,0 +1,60 @@
+use super::Expression;
+use crate::param::Param;
+use sqlparser::ast;
+
+/// Колонка: col("users.id")
+pub fn col(name: &str) -> Expression {
+    let ident = if name.contains('.') {
+        let parts = name
+            .split('.')
+            .map(|s| ast::Ident::new(s))
+            .collect::<Vec<_>>();
+        Expression {
+            expr: ast::Expr::CompoundIdentifier(parts),
+            alias: None,
+            params: vec![],
+            mark_distinct_for_next: false,
+        }
+    } else {
+        Expression {
+            expr: ast::Expr::Identifier(ast::Ident::new(name)),
+            alias: None,
+            params: vec![],
+            mark_distinct_for_next: false,
+        }
+    };
+    ident
+}
+
+/// Параметр с bind'ом, эквивалент `?`, значение кладётся в params
+pub fn val<T: Into<Param>>(v: T) -> Expression {
+    Expression {
+        expr: ast::Expr::Value(ast::Value::Number("?".into(), false).into()), // плейсхолдер
+        alias: None,
+        params: vec![v.into()],
+        mark_distinct_for_next: false,
+    }
+}
+
+/// Явный литерал (используй экономно; для безопасности предпочитай `val`)
+pub fn lit<S: Into<String>>(s: S) -> Expression {
+    Expression {
+        expr: ast::Expr::Value(ast::Value::SingleQuotedString(s.into()).into()),
+        alias: None,
+        params: vec![],
+        mark_distinct_for_next: false,
+    }
+}
+
+/// Сырый фрагмент AST (на свой риск). Полезно для функций/операторов, которых ещё нет в DSL.
+pub fn raw<F>(build: F) -> Expression
+where
+    F: FnOnce() -> ast::Expr,
+{
+    Expression {
+        expr: build(),
+        alias: None,
+        params: vec![],
+        mark_distinct_for_next: false,
+    }
+}
