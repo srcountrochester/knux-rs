@@ -81,7 +81,7 @@ fn resolve_into_expr_with_works_for_expr() {
 
 #[test]
 fn resolve_into_expr_with_for_subquery_and_closure() {
-    fn dummy_builder(_: QueryBuilder) -> Result<(ast::Query, SmallVec<[Param; 8]>)> {
+    fn dummy_builder(_: QueryBuilder) -> Result<(ast::Query, Vec<Param>)> {
         Ok((
             ast::Query {
                 with: None,
@@ -98,7 +98,8 @@ fn resolve_into_expr_with_for_subquery_and_closure() {
                 pipe_operators: vec![],
                 settings: None,
             },
-            smallvec![Param::I32(42)],
+            vec![Param::I32(42)],
+            // smallvec![Param::I32(42)],
         ))
     }
 

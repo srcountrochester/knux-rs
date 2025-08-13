@@ -1,10 +1,8 @@
 use crate::query_builder::{
-    QueryBuilder, Result,
+    FromItem, QueryBuilder,
     args::{ArgList, QBArg},
 };
-use sqlparser::ast::{
-    Expr, Ident, ObjectName, ObjectNamePart, TableAlias, TableFactor, TableWithJoins,
-};
+use sqlparser::ast::{Expr, Ident, ObjectName, ObjectNamePart};
 
 impl QueryBuilder {
     /// FROM <table | (subquery)>
@@ -16,87 +14,43 @@ impl QueryBuilder {
         L: ArgList,
     {
         let args = table.into_vec();
-        let active_schema = self
-            .pending_schema
-            .take()
-            .or_else(|| self.default_schema.clone());
+        self.from_items.reserve(args.len());
 
         for arg in args {
             match arg {
                 // Строки/Expression (через helpers::col) → имя таблицы
                 QBArg::Expr(e) => {
                     let mut p = e.params;
-                    self.params.append(&mut p);
+                    if !p.is_empty() {
+                        self.params.append(&mut p);
+                    }
 
-                    if let Some(name) = Self::expr_to_object_name(e.expr, active_schema.as_deref())
-                    {
-                        let tf = TableFactor::Table {
-                            name,
-                            alias: None,
-                            args: None,
-                            with_hints: vec![],
-                            partitions: vec![],
-                            version: None,
-                            index_hints: vec![],
-                            json_path: None,
-                            sample: None,
-                            with_ordinality: false,
-                        };
-                        self.from_tables.push(TableWithJoins {
-                            relation: tf,
-                            joins: vec![],
-                        });
+                    if let Some(name) = Self::expr_to_object_name(e.expr, self.active_schema()) {
+                        self.from_items.push(FromItem::TableName(name));
                     }
                 }
 
                 // Подзапрос: FROM ( <built-query> )
-                QBArg::Subquery(qb) => {
-                    let alias = qb.alias.clone();
-                    if let Ok((q, mut p)) = qb.build_query_ast() {
-                        self.params.append(&mut p);
-
-                        let tf = TableFactor::Derived {
-                            lateral: false,
-                            subquery: Box::new(q),
-                            alias: alias.map(|a| TableAlias {
-                                name: Ident::new(a),
-                                columns: vec![],
-                            }),
-                        };
-                        self.from_tables.push(TableWithJoins {
-                            relation: tf,
-                            joins: vec![],
-                        });
-                    }
-                }
+                QBArg::Subquery(qb) => self.from_items.push(FromItem::Subquery(Box::new(qb))),
 
                 // Closure → строим внутренний QueryBuilder и превращаем в subquery
-                QBArg::Closure(c) => {
-                    let built = c.apply(QueryBuilder::new_empty());
-                    let alias = built.alias.clone();
-
-                    if let Ok((q, mut p)) = built.build_query_ast() {
-                        self.params.append(&mut p);
-
-                        let tf = TableFactor::Derived {
-                            lateral: false,
-                            subquery: Box::new(q),
-                            alias: alias.map(|a| TableAlias {
-                                name: Ident::new(a),
-                                columns: vec![],
-                            }),
-                        };
-                        self.from_tables.push(TableWithJoins {
-                            relation: tf,
-                            joins: vec![],
-                        });
-                    }
-                }
+                QBArg::Closure(c) => self.from_items.push(FromItem::SubqueryClosure(c)),
             }
         }
         self
     }
 
+    #[inline]
+    pub fn from_mut<L>(&mut self, items: L) -> &mut Self
+    where
+        L: ArgList,
+    {
+        let v = std::mem::take(&mut *self);
+        *self = v.from(items);
+        self
+    }
+
+    #[inline]
     /// Попытка интерпретировать Expr как имя таблицы:
     /// - Identifier("users")  → [default_schema?].users
     /// - CompoundIdentifier(["s","t"]) → s.t

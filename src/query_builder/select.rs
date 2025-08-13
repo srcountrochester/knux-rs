@@ -22,18 +22,33 @@ impl QueryBuilder {
                 QBArg::Expr(e) => {
                     let (item, mut p) = Self::expr_to_select_item(e);
                     self.select_items.push(item);
-                    self.params.append(&mut p);
+                    if !p.is_empty() {
+                        self.params.append(&mut p);
+                    }
                 }
                 other => {
-                    if let Ok((expr_ast, mut params)) =
+                    if let Ok((expr_ast, params)) =
                         other.resolve_into_expr_with(|qb| qb.build_query_ast())
                     {
                         self.select_items.push(SelectItem::UnnamedExpr(expr_ast));
-                        self.params.append(&mut params);
+                        if !params.is_empty() {
+                            self.params.reserve(params.len());
+                            self.params.extend(params);
+                        }
                     }
                 }
             }
         }
+        self
+    }
+
+    #[inline]
+    pub fn select_mut<L>(&mut self, items: L) -> &mut Self
+    where
+        L: ArgList,
+    {
+        let v = std::mem::take(&mut *self); // или дублируй логику без take
+        *self = v.select(items);
         self
     }
 

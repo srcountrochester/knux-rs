@@ -63,15 +63,12 @@ impl QBArg {
     /// `build_subquery` — функция, которая принимает `QueryBuilder`
     /// и возвращает `(ast::Query, params)`. Её предоставит сам `QueryBuilder`
     /// там, где уже есть контекст (`SELECT`, `WHERE IN (subquery)`, и т.п.).
-    pub fn resolve_into_expr_with<F>(
-        self,
-        build_subquery: F,
-    ) -> Result<(ast::Expr, SmallVec<[Param; 8]>)>
+    pub fn resolve_into_expr_with<F>(self, build_subquery: F) -> Result<(ast::Expr, Vec<Param>)>
     where
-        F: FnOnce(QueryBuilder) -> Result<(ast::Query, SmallVec<[Param; 8]>)>,
+        F: FnOnce(QueryBuilder) -> Result<(ast::Query, Vec<Param>)>,
     {
         match self {
-            QBArg::Expr(e) => Ok((e.expr, e.params)),
+            QBArg::Expr(e) => Ok((e.expr, e.params.into_vec())),
             QBArg::Subquery(qb) => {
                 let (q, params) = build_subquery(qb)?;
                 Ok((ast::Expr::Subquery(Box::new(q)), params))
@@ -97,6 +94,7 @@ pub trait IntoQBArg {
 
 // &str → колонка
 impl IntoQBArg for &str {
+    #[inline]
     fn into_qb_arg(self) -> QBArg {
         QBArg::Expr(expression::helpers::col(self))
     }
@@ -104,6 +102,7 @@ impl IntoQBArg for &str {
 
 // String → колонка
 impl IntoQBArg for String {
+    #[inline]
     fn into_qb_arg(self) -> QBArg {
         QBArg::Expr(expression::helpers::col(&self))
     }
@@ -111,6 +110,7 @@ impl IntoQBArg for String {
 
 // Expression → как есть
 impl IntoQBArg for Expression {
+    #[inline]
     fn into_qb_arg(self) -> QBArg {
         QBArg::Expr(self)
     }
@@ -118,6 +118,7 @@ impl IntoQBArg for Expression {
 
 // QueryBuilder → подзапрос
 impl IntoQBArg for QueryBuilder {
+    #[inline]
     fn into_qb_arg(self) -> QBArg {
         QBArg::Subquery(self)
     }
@@ -128,12 +129,14 @@ impl<F> IntoQBArg for F
 where
     F: FnOnce(QueryBuilder) -> QueryBuilder + Send + 'static,
 {
+    #[inline]
     fn into_qb_arg(self) -> QBArg {
         QBArg::Closure(QBClosure::new(self))
     }
 }
 
 impl IntoQBArg for QBArg {
+    #[inline]
     fn into_qb_arg(self) -> QBArg {
         self
     }
@@ -144,6 +147,7 @@ impl<T, const N: usize> ArgList for [T; N]
 where
     T: IntoQBArg,
 {
+    #[inline]
     fn into_vec(self) -> Vec<QBArg> {
         // into_iter() по массиву доступен в стабильном Rust
         self.into_iter().map(IntoQBArg::into_qb_arg).collect()
@@ -155,6 +159,7 @@ impl<'a, T, const N: usize> ArgList for &'a [T; N]
 where
     T: IntoQBArg + Clone,
 {
+    #[inline]
     fn into_vec(self) -> Vec<QBArg> {
         self.iter().cloned().map(IntoQBArg::into_qb_arg).collect()
     }
@@ -165,6 +170,7 @@ impl<T> ArgList for T
 where
     T: IntoQBArg,
 {
+    #[inline]
     fn into_vec(self) -> Vec<QBArg> {
         vec![IntoQBArg::into_qb_arg(self)]
     }
@@ -189,6 +195,7 @@ impl<T> ArgList for Vec<T>
 where
     T: IntoQBArg,
 {
+    #[inline]
     fn into_vec(self) -> Vec<QBArg> {
         self.into_iter().map(IntoQBArg::into_qb_arg).collect()
     }
@@ -199,6 +206,7 @@ impl<'a, T> ArgList for &'a [T]
 where
     T: IntoQBArg + Clone,
 {
+    #[inline]
     fn into_vec(self) -> Vec<QBArg> {
         self.iter().cloned().map(IntoQBArg::into_qb_arg).collect()
     }

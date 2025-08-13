@@ -4,6 +4,7 @@ use crate::{
 };
 
 impl QueryBuilder {
+    #[inline]
     pub fn to_sql(self) -> Result<(String, Vec<Param>)> {
         let (query, params) = self.build_query_ast()?;
         Ok((query.to_string(), params.to_vec()))

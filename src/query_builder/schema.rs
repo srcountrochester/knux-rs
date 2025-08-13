@@ -6,4 +6,14 @@ impl QueryBuilder {
         self.pending_schema = Some(schema.into());
         self
     }
+
+    #[inline]
+    pub(super) fn active_schema(&self) -> Option<&str> {
+        // если добавил pending_schema — сначала она, иначе default
+        #[allow(unused)]
+        if let Some(s) = self.pending_schema.as_deref() {
+            return Some(s);
+        }
+        self.default_schema.as_deref()
+    }
 }
