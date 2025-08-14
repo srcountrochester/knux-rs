@@ -10,7 +10,7 @@ fn from_with_explicit_schema_overrides_default() {
         .to_sql()
         .expect("to_sql");
 
-    assert!(sql.contains("FROM forced.users"), "got: {sql}");
+    assert!(sql.contains("FROM \"forced\".\"users\""), "got: {sql}");
 }
 
 #[test]
@@ -22,7 +22,7 @@ fn from_uses_default_schema_if_no_explicit_set() {
         .to_sql()
         .expect("to_sql");
 
-    assert!(sql.contains("FROM myschema.users"), "got: {sql}");
+    assert!(sql.contains("FROM \"myschema\".\"users\""), "got: {sql}");
 }
 
 #[test]
@@ -33,5 +33,5 @@ fn from_without_schema_or_default_uses_plain_table() {
         .to_sql()
         .expect("to_sql");
 
-    assert!(sql.contains("FROM users"), "got: {sql}");
+    assert!(sql.contains("FROM \"users\""), "got: {sql}");
 }

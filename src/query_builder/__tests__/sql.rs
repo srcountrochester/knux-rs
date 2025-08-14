@@ -28,7 +28,7 @@ fn simple_select_from_table() {
         .to_sql()
         .unwrap();
 
-    assert!(sql.contains("SELECT id, name FROM users"));
+    assert!(sql.contains("SELECT \"id\", \"name\" FROM \"users\""));
     assert!(params.is_empty());
 }
 
@@ -40,7 +40,10 @@ fn select_from_table_with_default_schema() {
         .from("users");
 
     let (sql, params) = qb.to_sql().expect("to_sql");
-    assert!(sql.contains("SELECT id, name FROM public.users") || sql.contains("FROM public.users"));
+    assert!(
+        sql.contains("SELECT \"id\", \"name\" FROM \"public\".\"users\"")
+            || sql.contains("FROM \"public\".\"users\"")
+    );
     assert!(params.is_empty());
 }
 
@@ -51,7 +54,7 @@ fn select_from_qualified_table() {
         .from("app.users")
         .to_sql()
         .unwrap();
-    assert!(sql.contains("FROM app.users"));
+    assert!(sql.contains("FROM \"app\".\"users\""));
 }
 
 #[test]
@@ -84,19 +87,19 @@ fn to_sql_from_multiple_plain_tables_with_default_schema() {
     // Проверяем, что все источники присутствуют и в правильном порядке:
     // app.users, auth.roles, app.logs
     let i_users = sql
-        .find("FROM app.users")
-        .or_else(|| sql.find("FROM app . users"))
-        .expect(&format!("FROM app.users not found in: {sql}"));
+        .find("FROM \"app\".\"users\"")
+        .or_else(|| sql.find("FROM \"app\" . \"users\""))
+        .expect(&format!("FROM \"app\".\"users\" not found in: {sql}"));
 
     let i_roles = sql
-        .find("auth.roles")
-        .or_else(|| sql.find("auth . roles"))
-        .expect(&format!("auth.roles not found in: {sql}"));
+        .find("\"auth\".\"roles\"")
+        .or_else(|| sql.find("\"auth\" . \"roles\""))
+        .expect(&format!("\"auth\".\"roles\" not found in: {sql}"));
 
     let i_logs = sql
-        .find("app.logs")
-        .or_else(|| sql.find("app . logs"))
-        .expect(&format!("app.logs not found in: {sql}"));
+        .find("\"app\".\"logs\"")
+        .or_else(|| sql.find("\"app\" . \"logs\""))
+        .expect(&format!("\"app\".\"logs\" not found in: {sql}"));
 
     assert!(
         i_users < i_roles && i_roles < i_logs,
@@ -105,7 +108,7 @@ fn to_sql_from_multiple_plain_tables_with_default_schema() {
 
     // Мини-проверка селекта
     assert!(
-        sql.starts_with("SELECT id "),
+        sql.starts_with("SELECT \"id\" "),
         "projection should start with SELECT id; got: {sql}"
     );
 }
@@ -134,9 +137,9 @@ fn to_sql_from_mixed_table_subquery_and_closure() {
 
     // Должно быть: сначала users, затем два подзапроса "(SELECT ..."
     let i_users = sql
-        .find("FROM users")
-        .or_else(|| sql.find("FROM users "))
-        .expect(&format!("FROM users not found in: {sql}"));
+        .find("FROM \"users\"")
+        .or_else(|| sql.find("FROM \"users\" "))
+        .expect(&format!("FROM \"users\" not found in: {sql}"));
 
     // Найдём два вхождения "(SELECT"
     let mut idx = 0usize;
@@ -160,7 +163,7 @@ fn to_sql_from_mixed_table_subquery_and_closure() {
 
     // Убедимся, что SELECT-часть тоже адекватна
     assert!(
-        sql.starts_with("SELECT x "),
-        "projection should start with SELECT x; got: {sql}"
+        sql.starts_with("SELECT \"x\" "),
+        "projection should start with SELECT \"x\"; got: {sql}"
     );
 }

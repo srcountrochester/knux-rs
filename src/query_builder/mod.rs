@@ -1,4 +1,4 @@
-use crate::{executor::DbPool, param::Param, query_builder::args::QBClosure};
+use crate::{executor::DbPool, param::Param, query_builder::args::QBClosure, renderer::Dialect};
 use smallvec::{SmallVec, smallvec};
 use sqlparser::ast::{
     self, Expr, GroupByExpr, Ident, Query, Select, SelectFlavor, SelectItem, TableAlias,
@@ -33,6 +33,7 @@ pub struct QueryBuilder {
     pub default_schema: Option<String>,
     pub(crate) pending_schema: Option<String>,
     pub alias: Option<String>,
+    pub(crate) dialect: Dialect,
 }
 
 impl QueryBuilder {
@@ -46,6 +47,12 @@ impl QueryBuilder {
             default_schema: schema,
             pending_schema: None,
             alias: None,
+            #[cfg(feature = "sqlite")]
+            dialect: Dialect::SQLite,
+            #[cfg(feature = "postgres")]
+            dialect: Dialect::Postgres,
+            #[cfg(feature = "mysql")]
+            dialect: Dialect::MySQL,
         }
     }
 
@@ -60,6 +67,12 @@ impl QueryBuilder {
             default_schema: None,
             pending_schema: None,
             alias: None,
+            #[cfg(feature = "sqlite")]
+            dialect: Dialect::SQLite,
+            #[cfg(feature = "postgres")]
+            dialect: Dialect::Postgres,
+            #[cfg(feature = "mysql")]
+            dialect: Dialect::MySQL,
         }
     }
 

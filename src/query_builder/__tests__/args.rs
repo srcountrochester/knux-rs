@@ -2,7 +2,6 @@ use super::super::args::{ArgList, IntoQBArg, QBArg, collect_args};
 use crate::expression::helpers::col;
 use crate::param::Param;
 use crate::query_builder::{Error, QueryBuilder, Result};
-use smallvec::{SmallVec, smallvec};
 use sqlparser::ast;
 
 #[test]
