@@ -1,4 +1,4 @@
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum GroupByModifier {
     Rollup,
     Cube,
@@ -6,7 +6,7 @@ pub enum GroupByModifier {
     GroupingSets(Expr),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Select {
     pub distinct: bool,
     pub distinct_on: Vec<Expr>,
@@ -22,7 +22,7 @@ pub struct Select {
     pub offset: Option<u64>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct WildcardOpts {
     pub ilike: Option<String>,
     pub exclude_raw: Option<String>,
@@ -31,7 +31,7 @@ pub struct WildcardOpts {
     pub rename_raw: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SelectItem {
     Star {
         opts: Option<WildcardOpts>,
@@ -46,7 +46,7 @@ pub enum SelectItem {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TableRef {
     Named {
         schema: Option<String>,
@@ -59,29 +59,34 @@ pub enum TableRef {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum JoinKind {
     Inner,
     Left,
     Right,
     Full,
     Cross,
+    NaturalInner,
+    NaturalLeft,
+    NaturalRight,
+    NaturalFull,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Join {
     pub kind: JoinKind,
     pub table: TableRef,
     pub on: Option<Expr>, // для CROSS on=None
+    pub using_cols: Option<Vec<String>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum OrderDirection {
     Asc,
     Desc,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OrderItem {
     pub expr: Expr,
     pub dir: OrderDirection,
@@ -89,8 +94,9 @@ pub struct OrderItem {
 }
 
 /// Упрощённые выражения — достаточно для 90% CRUD
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
+    Raw(String),
     Ident {
         path: Vec<String>,
     }, // ["schema","table","col"] или ["table","col"] или ["col"]
@@ -99,19 +105,41 @@ pub enum Expr {
     Number(String),
     Bool(bool),
     Null,
+    Star,
+    Tuple(Vec<Expr>),
+    Unary {
+        op: UnOp,
+        expr: Box<Expr>,
+    },
     Binary {
         left: Box<Expr>,
         op: BinOp,
         right: Box<Expr>,
     },
-    Unary {
-        op: UnOp,
-        expr: Box<Expr>,
-    },
     Paren(Box<Expr>),
     FuncCall {
         name: String,
         args: Vec<Expr>,
+    },
+    Like {
+        not: bool,
+        ilike: bool,          // true → ILIKE (только PG), иначе LIKE
+        expr: Box<Expr>,      // слева
+        pattern: Box<Expr>,   // справа
+        escape: Option<char>, // ESCAPE '\'
+    },
+    Cast {
+        expr: Box<Expr>,
+        ty: String,
+    },
+    Collate {
+        expr: Box<Expr>,
+        collation: String,
+    },
+    WindowFunc {
+        name: String,
+        args: Vec<Expr>,
+        window: WindowSpec,
     },
     Case {
         operand: Option<Box<Expr>>,
@@ -120,7 +148,7 @@ pub enum Expr {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum BinOp {
     Eq,
     Neq,
@@ -145,8 +173,55 @@ pub enum BinOp {
     IsNot,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum UnOp {
     Not,
     Neg,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SetOp {
+    Union,
+    UnionAll,
+    Intersect,
+    Except,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum QueryBody {
+    Select(Select),
+    Set {
+        left: Box<QueryBody>,
+        op: SetOp,
+        right: Box<QueryBody>,
+        by_name: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct With {
+    pub recursive: bool,
+    pub ctes: Vec<Cte>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cte {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub query: Box<QueryBody>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Query {
+    pub with: Option<With>,
+    pub body: QueryBody,
+    pub order_by: Vec<OrderItem>, // ORDER BY ... на уровне всего запроса
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WindowSpec {
+    pub partition_by: Vec<Expr>,
+    pub order_by: Vec<OrderItem>,
 }

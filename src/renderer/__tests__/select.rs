@@ -254,6 +254,7 @@ fn join_and_subquery_in_from_render() {
                 op: R::BinOp::Eq,
                 right: Box::new(ident(&["a", "user_id"])),
             }),
+            using_cols: None,
         }],
         r#where: None,
         group_by: vec![],

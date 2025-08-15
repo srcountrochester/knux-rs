@@ -1,12 +1,158 @@
 use crate::renderer::ast as R;
 
 use sqlparser::ast::{
-    BinaryOperator as SBinOp, CaseWhen, Distinct, Expr as SExpr, Function, FunctionArg,
-    FunctionArgExpr, FunctionArguments, GroupByExpr, GroupByWithModifier, Join as SJoin,
-    JoinConstraint, JoinOperator as SJoinKind, LimitClause, ObjectName, OrderBy, OrderByExpr,
-    OrderByKind, Query as SQuery, Select as SSelect, SelectItem as SSelectItem, SetExpr,
-    TableFactor, UnaryOperator as SUnOp, Value, ValueWithSpan, WildcardAdditionalOptions,
+    BinaryOperator as SBinOp, CaseWhen, Cte as SCte, DataType, Distinct, Expr as SExpr, Function,
+    FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, GroupByWithModifier, Ident,
+    Join as SJoin, JoinConstraint, JoinOperator as SJoinKind, LimitClause, ObjectName, OrderBy,
+    OrderByExpr, OrderByKind, Query as SQuery, Select as SSelect, SelectItem as SSelectItem,
+    SetExpr, SetOperator, SetQuantifier, TableFactor, UnaryOperator as SUnOp, Value, ValueWithSpan,
+    WildcardAdditionalOptions, WindowFrame as SWindowFrame, WindowSpec as SWindowSpec, WindowType,
+    With as SWith,
 };
+
+pub fn map_to_render_query(q: &SQuery) -> R::Query {
+    let body = map_query_body(&q.body);
+    let order_by = q.order_by.as_ref().map(map_order_by).unwrap_or_default();
+    // LIMIT/OFFSET как было
+    let mut limit = None;
+    let mut offset = None;
+    if let Some(lim_expr) = q.limit_clause.as_ref() {
+        match lim_expr {
+            LimitClause::LimitOffset {
+                limit: lim,
+                offset: off,
+                ..
+            } => {
+                if let Some(v) = off {
+                    if let Some(v) = literal_u64(&v.value) {
+                        offset = Some(v);
+                    }
+                }
+                if let Some(v) = lim {
+                    if let Some(v) = literal_u64(&v) {
+                        limit = Some(v);
+                    }
+                }
+            }
+            LimitClause::OffsetCommaLimit {
+                offset: off,
+                limit: lim,
+            } => {
+                if let Some(v) = literal_u64(off) {
+                    offset = Some(v);
+                }
+                if let Some(v) = literal_u64(lim) {
+                    limit = Some(v);
+                }
+            }
+        }
+    }
+
+    let with = q.with.as_ref().map(map_with_clause);
+
+    R::Query {
+        with,
+        body,
+        order_by,
+        limit,
+        offset,
+    }
+}
+
+fn map_query_body(se: &SetExpr) -> R::QueryBody {
+    match se {
+        SetExpr::Select(boxed) => R::QueryBody::Select(map_select_to_render_ast(boxed)),
+        SetExpr::Query(q) => map_query_body(&q.body),
+
+        SetExpr::SetOperation {
+            op,
+            set_quantifier,
+            left,
+            right,
+        } => {
+            // MINUS — синоним EXCEPT
+            let base_op = match op {
+                SetOperator::Union => R::SetOp::Union, // уточним ниже ALL/Distinct
+                SetOperator::Intersect => R::SetOp::Intersect,
+                SetOperator::Except => R::SetOp::Except,
+                SetOperator::Minus => R::SetOp::Except,
+            };
+
+            // Квантификатор: ALL / DISTINCT / BY NAME-варианты / NONE (т.е. default)
+            let (op, by_name) = match (base_op, set_quantifier) {
+                // UNION-варианты
+                (R::SetOp::Union, SetQuantifier::All) => (R::SetOp::UnionAll, false),
+                (R::SetOp::Union, SetQuantifier::Distinct) => (R::SetOp::Union, false),
+                (R::SetOp::Union, SetQuantifier::ByName) => (R::SetOp::Union, true),
+                (R::SetOp::Union, SetQuantifier::AllByName) => (R::SetOp::UnionAll, true),
+                (R::SetOp::Union, SetQuantifier::DistinctByName) => (R::SetOp::Union, true),
+                (R::SetOp::Union, SetQuantifier::None) => (R::SetOp::Union, false), // default=Distinct
+
+                // INTERSECT/EXCEPT/MINUS — BY NAME тоже встречается в отдельных диалектах
+                (o @ R::SetOp::Intersect, SetQuantifier::All) => (o, false),
+                (o @ R::SetOp::Intersect, SetQuantifier::Distinct) => (o, false),
+                (o @ R::SetOp::Intersect, SetQuantifier::ByName) => (o, true),
+                (o @ R::SetOp::Intersect, SetQuantifier::AllByName) => (o, true),
+                (o @ R::SetOp::Intersect, SetQuantifier::DistinctByName) => (o, true),
+                (o @ R::SetOp::Intersect, SetQuantifier::None) => (o, false),
+
+                (o @ R::SetOp::Except, SetQuantifier::All) => (o, false),
+                (o @ R::SetOp::Except, SetQuantifier::Distinct) => (o, false),
+                (o @ R::SetOp::Except, SetQuantifier::ByName) => (o, true),
+                (o @ R::SetOp::Except, SetQuantifier::AllByName) => (o, true),
+                (o @ R::SetOp::Except, SetQuantifier::DistinctByName) => (o, true),
+                (o @ R::SetOp::Except, SetQuantifier::None) => (o, false),
+
+                // UNION ALL уже нормализован выше
+                (o @ R::SetOp::UnionAll, _) => {
+                    (o, matches!(set_quantifier, SetQuantifier::AllByName))
+                }
+            };
+
+            R::QueryBody::Set {
+                left: Box::new(map_query_body(left)),
+                op,
+                right: Box::new(map_query_body(right)),
+                by_name,
+            }
+        }
+
+        _ => R::QueryBody::Select(R::Select {
+            distinct: false,
+            distinct_on: vec![],
+            items: vec![R::SelectItem::Star { opts: None }],
+            from: None,
+            joins: vec![],
+            r#where: None,
+            group_by: vec![],
+            group_by_modifiers: vec![],
+            having: None,
+            order_by: vec![],
+            limit: None,
+            offset: None,
+        }),
+    }
+}
+
+fn map_with_clause(sw: &SWith) -> R::With {
+    R::With {
+        recursive: sw.recursive,
+        ctes: sw.cte_tables.iter().map(map_cte).collect(),
+    }
+}
+
+fn map_cte(cte: &SCte) -> R::Cte {
+    R::Cte {
+        name: cte.alias.name.value.clone(),
+        columns: cte
+            .alias
+            .columns
+            .iter()
+            .map(|c| c.name.value.clone())
+            .collect(),
+        query: Box::new(map_query_body(&cte.query.body)),
+    }
+}
 
 /// Главная функция: Query -> renderer::ast::Select
 ///
@@ -95,6 +241,7 @@ fn map_select_to_render_ast(sel: &SSelect) -> R::Select {
                 kind: R::JoinKind::Cross,
                 table: map_table_factor(&twj.relation),
                 on: None,
+                using_cols: None,
             });
         }
         for j in &twj.joins {
@@ -330,35 +477,59 @@ fn map_table_factor(tf: &TableFactor) -> R::TableRef {
 }
 
 fn map_join(j: &SJoin) -> R::Join {
-    let kind = match j.join_operator {
-        SJoinKind::Inner(..) => R::JoinKind::Inner,
-        SJoinKind::LeftOuter(..) => R::JoinKind::Left,
-        SJoinKind::RightOuter(..) => R::JoinKind::Right,
-        SJoinKind::FullOuter(..) => R::JoinKind::Full,
-        SJoinKind::CrossJoin => R::JoinKind::Cross,
-        SJoinKind::CrossApply => R::JoinKind::Cross,
-        SJoinKind::OuterApply => R::JoinKind::Left, // приближённо
-        SJoinKind::Join { .. } => R::JoinKind::Inner,
+    // natural?
+    let (nat, constraint_opt) = match &j.join_operator {
+        SJoinKind::Inner(c) => (false, Some(c)),
+        SJoinKind::LeftOuter(c) => (false, Some(c)),
+        SJoinKind::RightOuter(c) => (false, Some(c)),
+        SJoinKind::FullOuter(c) => (false, Some(c)),
+        SJoinKind::CrossJoin => (false, None),
+        SJoinKind::CrossApply => (false, None),
+        SJoinKind::OuterApply => (false, None),
+        SJoinKind::Join(JoinConstraint::Natural) => (true, None),
+        SJoinKind::Join(c) => (false, Some(c)),
+        _ => (false, None),
+    };
+
+    // kind
+    let mut kind = match j.join_operator {
+        SJoinKind::Inner(_) | SJoinKind::Join(_) => R::JoinKind::Inner, // ← tuple variant
+        SJoinKind::LeftOuter(_) => R::JoinKind::Left,
+        SJoinKind::RightOuter(_) => R::JoinKind::Right,
+        SJoinKind::FullOuter(_) => R::JoinKind::Full,
+        SJoinKind::CrossJoin | SJoinKind::CrossApply => R::JoinKind::Cross,
+        SJoinKind::OuterApply => R::JoinKind::Left,
         _ => R::JoinKind::Inner,
     };
 
-    // constraint (ON / USING)
-    let on = match &j.join_operator {
-        SJoinKind::Inner(constraint)
-        | SJoinKind::LeftOuter(constraint)
-        | SJoinKind::RightOuter(constraint)
-        | SJoinKind::FullOuter(constraint) => match constraint {
-            JoinConstraint::On(expr) => Some(map_expr(expr)),
-            // USING(col1, col2, ...) — можно развернуть в цепочку равенств; пропустим для краткости
-            _ => None,
-        },
-        _ => None,
-    };
+    if nat {
+        kind = match kind {
+            R::JoinKind::Inner => R::JoinKind::NaturalInner,
+            R::JoinKind::Left => R::JoinKind::NaturalLeft,
+            R::JoinKind::Right => R::JoinKind::NaturalRight,
+            R::JoinKind::Full => R::JoinKind::NaturalFull,
+            _ => kind,
+        };
+    }
+
+    // constraint: ON / USING
+    let mut on = None;
+    let mut using_cols = None;
+    if let Some(c) = constraint_opt {
+        match c {
+            JoinConstraint::On(expr) => on = Some(map_expr(expr)),
+            JoinConstraint::Using(cols) => {
+                using_cols = Some(cols.iter().map(|i| i.to_string()).collect());
+            }
+            _ => {}
+        }
+    }
 
     R::Join {
         kind,
         table: map_table_factor(&j.relation),
         on,
+        using_cols,
     }
 }
 
@@ -412,8 +583,7 @@ fn map_expr(e: &SExpr) -> R::Expr {
             } else {
                 R::BinOp::In
             },
-            // временно кодируем список через tuple(...) + скобки
-            right: Box::new(E::Paren(Box::new(list_to_tuple(list)))),
+            right: Box::new(R::Expr::Tuple(list.iter().map(map_expr).collect())),
         },
 
         // ----- LIKE / ILIKE (ESCAPE пока опускаем) -----
@@ -421,29 +591,31 @@ fn map_expr(e: &SExpr) -> R::Expr {
             negated,
             expr,
             pattern,
+            escape_char,
             ..
-        } => E::Binary {
-            left: Box::new(map_expr(expr)),
-            op: if *negated {
-                R::BinOp::NotLike
-            } else {
-                R::BinOp::Like
-            },
-            right: Box::new(map_expr(pattern)),
+        } => R::Expr::Like {
+            not: *negated,
+            ilike: false,
+            expr: Box::new(map_expr(expr)),
+            pattern: Box::new(map_expr(pattern)),
+            escape: escape_char
+                .as_ref()
+                .map_or(None, |v| v.to_string().chars().next()),
         },
         SExpr::ILike {
             negated,
             expr,
             pattern,
+            escape_char,
             ..
-        } => E::Binary {
-            left: Box::new(map_expr(expr)),
-            op: if *negated {
-                R::BinOp::NotIlike
-            } else {
-                R::BinOp::Ilike
-            },
-            right: Box::new(map_expr(pattern)),
+        } => R::Expr::Like {
+            not: *negated,
+            ilike: true,
+            expr: Box::new(map_expr(expr)),
+            pattern: Box::new(map_expr(pattern)),
+            escape: escape_char
+                .as_ref()
+                .map_or(None, |v| v.to_string().chars().next()),
         },
 
         // ----- BETWEEN -> (>= AND <=) / NOT (...) -----
@@ -481,8 +653,10 @@ fn map_expr(e: &SExpr) -> R::Expr {
         // ----- Скобки -----
         SExpr::Nested(inner) => E::Paren(Box::new(map_expr(inner))),
 
-        // ----- Функции (новый тип FunctionArguments) -----
-        SExpr::Function(Function { name, args, .. }) => E::FuncCall {
+        // // ----- Функции (новый тип FunctionArguments) -----
+        SExpr::Function(Function {
+            name, args, over, ..
+        }) if over.is_none() => E::FuncCall {
             name: name.to_string(),
             args: map_function_arguments(args),
         },
@@ -510,10 +684,60 @@ fn map_expr(e: &SExpr) -> R::Expr {
             }
         }
 
-        // ----- fallback -----
-        other => E::Ident {
-            path: vec![other.to_string()],
+        // CAST(expr AS type)
+        SExpr::Cast {
+            expr,
+            data_type,
+            kind,
+            ..
+        } => R::Expr::Cast {
+            expr: Box::new(map_expr(expr)),
+            ty: data_type.to_string(),
         },
+
+        // COLLATE
+        SExpr::Collate { expr, collation } => R::Expr::Collate {
+            expr: Box::new(map_expr(expr)),
+            collation: collation.to_string(),
+        },
+
+        // Оконная функция: Function { name, args, over: Some(spec) }
+        SExpr::Function(Function {
+            name, args, over, ..
+        }) if over.is_some() => match over.as_ref().unwrap() {
+            WindowType::WindowSpec(SWindowSpec {
+                window_name,
+                partition_by,
+                order_by,
+                window_frame,
+            }) => {
+                let part = partition_by.iter().map(map_expr).collect::<Vec<_>>();
+                let ob = order_by.iter().map(map_order_by_expr).collect();
+
+                R::Expr::WindowFunc {
+                    name: name.to_string(),
+                    args: map_function_arguments(args),
+                    window: R::WindowSpec {
+                        partition_by: part,
+                        order_by: ob,
+                    },
+                }
+            }
+            WindowType::NamedWindow(Ident {
+                quote_style,
+                span,
+                value,
+            }) => R::Expr::WindowFunc {
+                name: name.to_string(),
+                args: map_function_arguments(args),
+                window: R::WindowSpec {
+                    partition_by: vec![],
+                    order_by: vec![],
+                },
+            },
+        },
+
+        other => E::Raw(other.to_string()),
     }
 }
 
@@ -552,9 +776,7 @@ fn map_func_arg(a: &FunctionArg) -> R::Expr {
         // Именованный аргумент: name: Ident
         FunctionArg::Named { arg, .. } => match arg {
             FunctionArgExpr::Expr(e) => map_expr(e),
-            FunctionArgExpr::Wildcard => R::Expr::Ident {
-                path: vec!["*".into()],
-            },
+            FunctionArgExpr::Wildcard => R::Expr::Star,
             FunctionArgExpr::QualifiedWildcard(obj) => R::Expr::Ident {
                 path: vec![obj.to_string(), "*".into()],
             },
@@ -563,9 +785,7 @@ fn map_func_arg(a: &FunctionArg) -> R::Expr {
         // Именованный аргумент: name: Expr
         FunctionArg::ExprNamed { arg, .. } => match arg {
             FunctionArgExpr::Expr(e) => map_expr(e),
-            FunctionArgExpr::Wildcard => R::Expr::Ident {
-                path: vec!["*".into()],
-            },
+            FunctionArgExpr::Wildcard => R::Expr::Star,
             FunctionArgExpr::QualifiedWildcard(obj) => R::Expr::Ident {
                 path: vec![obj.to_string(), "*".into()],
             },
@@ -574,9 +794,7 @@ fn map_func_arg(a: &FunctionArg) -> R::Expr {
         // Неименованный
         FunctionArg::Unnamed(inner) => match inner {
             FunctionArgExpr::Expr(e) => map_expr(e),
-            FunctionArgExpr::Wildcard => R::Expr::Ident {
-                path: vec!["*".into()],
-            },
+            FunctionArgExpr::Wildcard => R::Expr::Star,
             FunctionArgExpr::QualifiedWildcard(obj) => R::Expr::Ident {
                 path: vec![obj.to_string(), "*".into()],
             },

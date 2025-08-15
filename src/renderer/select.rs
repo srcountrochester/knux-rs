@@ -1,8 +1,136 @@
+use crate::renderer::config::MysqlLimitStyle;
+
+use super::ast as R;
 use super::ast::*;
 use super::config::{Dialect, SqlRenderCfg};
 use super::ident::{quote_ident, quote_path};
 use super::writer::SqlWriter;
 
+pub fn render_sql_query(q: &R::Query, cfg: &SqlRenderCfg) -> String {
+    let mut w = SqlWriter::new(256, cfg.placeholders);
+
+    // WITH
+    if let Some(with) = &q.with {
+        w.push("WITH");
+        if with.recursive {
+            w.push(" RECURSIVE");
+        }
+        w.push(" ");
+        for (i, cte) in with.ctes.iter().enumerate() {
+            if i > 0 {
+                w.push(", ");
+            }
+            // name [(col...)] AS ( <query> )
+            w.push(&quote_ident(&cte.name, cfg));
+            if !cte.columns.is_empty() {
+                w.push(" (");
+                for (j, c) in cte.columns.iter().enumerate() {
+                    if j > 0 {
+                        w.push(", ");
+                    }
+                    w.push(&quote_ident(c, cfg));
+                }
+                w.push(")");
+            }
+            w.push(" AS (");
+            render_query_body(&mut w, &cte.query, cfg);
+            w.push(")");
+        }
+        w.push(" ");
+    }
+
+    // тело (Select/Set)
+    render_query_body(&mut w, &q.body, cfg);
+
+    // общий ORDER BY / LIMIT / OFFSET
+    if !q.order_by.is_empty() {
+        w.push(" ORDER BY ");
+        for (i, oi) in q.order_by.iter().enumerate() {
+            if i > 0 {
+                w.push(", ");
+            }
+
+            // ── NEW: эмуляция NULLS LAST вне Postgres
+            if !matches!(cfg.dialect, Dialect::Postgres)
+                && cfg.emulate_nulls_ordering
+                && oi.nulls_last
+            {
+                // 1) (expr IS NULL) ASC
+                w.push("(");
+                render_expr(&mut w, &oi.expr, cfg);
+                w.push(" IS NULL) ASC, ");
+
+                // 2) expr ASC|DESC
+                render_expr(&mut w, &oi.expr, cfg);
+                match oi.dir {
+                    OrderDirection::Asc => w.push(" ASC"),
+                    OrderDirection::Desc => w.push(" DESC"),
+                }
+                continue;
+            }
+
+            // обычный путь
+            render_expr(&mut w, &oi.expr, cfg);
+            match oi.dir {
+                OrderDirection::Asc => w.push(" ASC"),
+                OrderDirection::Desc => w.push(" DESC"),
+            }
+
+            // NULLS LAST печатаем только в PG
+            if matches!(cfg.dialect, Dialect::Postgres) && oi.nulls_last {
+                w.push(" NULLS LAST");
+            }
+        }
+    }
+    match (cfg.dialect, cfg.mysql_limit_style, q.limit, q.offset) {
+        (Dialect::MySQL, MysqlLimitStyle::OffsetCommaLimit, Some(l), Some(o)) => {
+            w.push(" LIMIT ");
+            w.push(o.to_string());
+            w.push(", ");
+            w.push(l.to_string());
+        }
+        _ => {
+            if let Some(l) = q.limit {
+                w.push(" LIMIT ");
+                w.push(l.to_string());
+            }
+            if let Some(o) = q.offset {
+                w.push(" OFFSET ");
+                w.push(o.to_string());
+            }
+        }
+    }
+
+    w.finish()
+}
+
+fn render_query_body(w: &mut SqlWriter, body: &R::QueryBody, cfg: &SqlRenderCfg) {
+    match body {
+        R::QueryBody::Select(s) => {
+            let inner = render_select(s, cfg, 128);
+            w.push(inner);
+        }
+        R::QueryBody::Set {
+            left,
+            op,
+            right,
+            by_name: _,
+        } => {
+            w.push("(");
+            render_query_body(w, left, cfg);
+            w.push(") ");
+            match op {
+                R::SetOp::Union => w.push("UNION "),
+                R::SetOp::UnionAll => w.push("UNION ALL "),
+                R::SetOp::Intersect => w.push("INTERSECT "),
+                R::SetOp::Except => w.push("EXCEPT "),
+            }
+            w.push("(");
+            render_query_body(w, right, cfg);
+            w.push(")");
+        }
+    }
+}
 pub fn render_select(sel: &Select, cfg: &SqlRenderCfg, cap: usize) -> String {
     let mut w = SqlWriter::new(cap, cfg.placeholders);
 
@@ -148,25 +276,50 @@ pub fn render_select(sel: &Select, cfg: &SqlRenderCfg, cap: usize) -> String {
             if i > 0 {
                 w.push(", ");
             }
-            render_expr(&mut w, &oi.expr, cfg);
-            match oi.dir {
-                OrderDirection::Asc => w.push(" ASC"),
-                OrderDirection::Desc => w.push(" DESC"),
-            }
-            // NULLS LAST только в PG; в MySQL/SQLite рендерить не будем
-            if matches!(cfg.dialect, Dialect::Postgres) && oi.nulls_last {
-                w.push(" NULLS LAST");
+            let emulate_nulls =
+                !matches!(cfg.dialect, Dialect::Postgres) && cfg.emulate_nulls_ordering;
+
+            if emulate_nulls && oi.nulls_last {
+                // (expr IS NULL) ASC, expr <ASC|DESC>
+                w.push("(");
+                render_expr(&mut w, &oi.expr, cfg);
+                w.push(" IS NULL) ASC, ");
+                render_expr(&mut w, &oi.expr, cfg);
+                match oi.dir {
+                    OrderDirection::Asc => w.push(" ASC"),
+                    OrderDirection::Desc => w.push(" DESC"),
+                }
+            } else {
+                // обычный путь
+                render_expr(&mut w, &oi.expr, cfg);
+                match oi.dir {
+                    OrderDirection::Asc => w.push(" ASC"),
+                    OrderDirection::Desc => w.push(" DESC"),
+                }
+                if matches!(cfg.dialect, Dialect::Postgres) && oi.nulls_last {
+                    w.push(" NULLS LAST");
+                }
             }
         }
     }
 
-    if let Some(l) = sel.limit {
-        w.push(" LIMIT ");
-        w.push(l.to_string());
-    }
-    if let Some(o) = sel.offset {
-        w.push(" OFFSET ");
-        w.push(o.to_string());
+    match (cfg.dialect, cfg.mysql_limit_style, sel.limit, sel.offset) {
+        (Dialect::MySQL, MysqlLimitStyle::OffsetCommaLimit, Some(l), Some(o)) => {
+            w.push(" LIMIT ");
+            w.push(o.to_string()); // offset
+            w.push(", ");
+            w.push(l.to_string()); // count
+        }
+        _ => {
+            if let Some(l) = sel.limit {
+                w.push(" LIMIT ");
+                w.push(l.to_string());
+            }
+            if let Some(o) = sel.offset {
+                w.push(" OFFSET ");
+                w.push(o.to_string());
+            }
+        }
     }
 
     w.finish()
@@ -189,7 +342,11 @@ fn render_select_item(w: &mut SqlWriter, it: &SelectItem, cfg: &SqlRenderCfg) {
         SelectItem::Expr { expr, alias } => {
             render_expr(w, expr, cfg);
             if let Some(a) = alias {
-                w.push(" AS ");
+                if cfg.emit_as_for_column_alias {
+                    w.push(" AS ");
+                } else {
+                    w.push(" ");
+                }
                 w.push(&quote_ident(a, cfg));
             }
         }
@@ -209,7 +366,11 @@ fn render_table_ref(w: &mut SqlWriter, t: &TableRef, cfg: &SqlRenderCfg) {
                 w.push(&quote_ident(name, cfg));
             }
             if let Some(a) = alias {
-                w.push(" AS ");
+                if cfg.emit_as_for_table_alias {
+                    w.push(" AS ");
+                } else {
+                    w.push(" ");
+                }
                 w.push(&quote_ident(a, cfg));
             }
         }
@@ -233,18 +394,82 @@ fn render_join(w: &mut SqlWriter, j: &Join, cfg: &SqlRenderCfg) {
         JoinKind::Right => w.push("RIGHT JOIN "),
         JoinKind::Full => w.push("FULL JOIN "),
         JoinKind::Cross => w.push("CROSS JOIN "),
+        JoinKind::NaturalInner => w.push("NATURAL INNER JOIN "),
+        JoinKind::NaturalLeft => w.push("NATURAL LEFT JOIN "),
+        JoinKind::NaturalRight => w.push("NATURAL RIGHT JOIN "),
+        JoinKind::NaturalFull => w.push("NATURAL FULL JOIN "),
     }
     render_table_ref(w, &j.table, cfg);
-    if !matches!(j.kind, JoinKind::Cross) {
+    if !matches!(
+        j.kind,
+        JoinKind::Cross
+            | JoinKind::NaturalInner
+            | JoinKind::NaturalLeft
+            | JoinKind::NaturalRight
+            | JoinKind::NaturalFull
+    ) {
         if let Some(on) = &j.on {
             w.push(" ON ");
             render_expr(w, on, cfg);
+        } else if let Some(cols) = &j.using_cols {
+            w.push(" USING (");
+            for (i, c) in cols.iter().enumerate() {
+                if i > 0 {
+                    w.push(", ");
+                }
+                w.push(&quote_ident(c, cfg));
+            }
+            w.push(")");
         }
     }
 }
 
 fn render_expr(w: &mut SqlWriter, e: &Expr, cfg: &SqlRenderCfg) {
     match e {
+        Expr::Raw(s) => w.push(s),
+        Expr::Star => w.push("*"),
+        Expr::Tuple(xs) => {
+            w.push("(");
+            for (i, x) in xs.iter().enumerate() {
+                if i > 0 {
+                    w.push(", ");
+                }
+                render_expr(w, x, cfg);
+            }
+            w.push(")");
+        }
+        Expr::Like {
+            not,
+            ilike,
+            expr,
+            pattern,
+            escape,
+        } => {
+            render_paren_if_needed(w, expr, cfg);
+            match (*not, *ilike, cfg.dialect) {
+                (false, false, _) => w.push(" LIKE "),
+                (true, false, _) => w.push(" NOT LIKE "),
+                (false, true, Dialect::Postgres) => w.push(" ILIKE "),
+                (true, true, Dialect::Postgres) => w.push(" NOT ILIKE "),
+                // ILIKE вне PG — деградация до LIKE/NOT LIKE
+                (false, true, _) => w.push(" LIKE "),
+                (true, true, _) => w.push(" NOT LIKE "),
+            }
+            render_paren_if_needed(w, pattern, cfg);
+            if let Some(ch) = escape {
+                w.push(" ESCAPE ");
+                // одинарные кавычки вокруг символа экранирования
+                let mut esc = String::with_capacity(3);
+                esc.push('\'');
+                if *ch == '\'' {
+                    esc.push_str("''");
+                } else {
+                    esc.push(*ch);
+                }
+                esc.push('\'');
+                w.push(esc);
+            }
+        }
         Expr::Ident { path } => {
             let parts: Vec<&str> = path.iter().map(|s| s.as_str()).collect();
             w.push(&quote_path(parts, cfg));
@@ -344,6 +569,57 @@ fn render_expr(w: &mut SqlWriter, e: &Expr, cfg: &SqlRenderCfg) {
                 render_expr(w, e, cfg);
             }
             w.push(" END");
+        }
+        Expr::Cast { expr, ty } => {
+            w.push("CAST(");
+            render_expr(w, expr, cfg);
+            w.push(" AS ");
+            w.push(ty);
+            w.push(")");
+        }
+
+        Expr::Collate { expr, collation } => {
+            render_expr(w, expr, cfg);
+            w.push(" COLLATE ");
+            w.push(&quote_ident(collation, cfg)); // аккуратно: можно и без кавычек если хочешь
+        }
+
+        Expr::WindowFunc { name, args, window } => {
+            w.push(&name);
+            w.push("(");
+            for (i, a) in args.iter().enumerate() {
+                if i > 0 {
+                    w.push(", ");
+                }
+                render_expr(w, a, cfg);
+            }
+            w.push(") OVER (");
+            if !window.partition_by.is_empty() {
+                w.push("PARTITION BY ");
+                for (i, e) in window.partition_by.iter().enumerate() {
+                    if i > 0 {
+                        w.push(", ");
+                    }
+                    render_expr(w, e, cfg);
+                }
+                if !window.order_by.is_empty() {
+                    w.push(" ");
+                }
+            }
+            if !window.order_by.is_empty() {
+                w.push("ORDER BY ");
+                for (i, oi) in window.order_by.iter().enumerate() {
+                    if i > 0 {
+                        w.push(", ");
+                    }
+                    render_expr(w, &oi.expr, cfg);
+                    match oi.dir {
+                        OrderDirection::Asc => w.push(" ASC"),
+                        OrderDirection::Desc => w.push(" DESC"),
+                    }
+                }
+            }
+            w.push(")");
         }
     }
 }

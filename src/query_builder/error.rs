@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use crate::renderer;
+
 pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(thiserror::Error, Debug)]
@@ -11,4 +13,7 @@ pub enum Error {
     /// Резолв подзапроса невозможен без билдера (вызвали не тот метод)
     #[error("Subquery requires a builder function (missing context)")]
     MissingSubqueryBuilder,
+
+    #[error(transparent)]
+    SQLRenderError(#[from] renderer::Error),
 }

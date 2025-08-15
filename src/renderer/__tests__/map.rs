@@ -218,9 +218,7 @@ fn map_count_star_function_arg() {
                 assert_eq!(name, "COUNT");
                 assert_eq!(args.len(), 1);
                 // мы мапим * как идентификатор с путём ["*"]
-                assert!(
-                    matches!(&args[0], R::Expr::Ident { path } if path == &vec!["*".to_string()])
-                );
+                assert!(matches!(&args[0], R::Expr::Star));
             }
             other => panic!("expected func call, got {other:?}"),
         },
@@ -341,17 +339,12 @@ fn map_in_list_and_between_normalization() {
                 } => {
                     assert!(matches!(op, R::BinOp::In));
                     assert!(is_ident_path(city, &["city"]));
-                    // мы кодируем список через Paren(FuncCall{name:"tuple", ...})
                     match &**right {
-                        R::Expr::Paren(inner) => match &**inner {
-                            R::Expr::FuncCall { name, args } => {
-                                assert_eq!(name, "tuple");
-                                assert_eq!(args.len(), 2);
-                                assert!(matches!(&args[0], R::Expr::String(s) if s == "NY"));
-                                assert!(matches!(&args[1], R::Expr::String(s) if s == "LA"));
-                            }
-                            other => panic!("unexpected IN-list representation: {other:?}"),
-                        },
+                        R::Expr::Tuple(args) => {
+                            assert_eq!(args.len(), 2);
+                            assert!(matches!(&args[0], R::Expr::String(s) if s == "NY"));
+                            assert!(matches!(&args[1], R::Expr::String(s) if s == "LA"));
+                        }
                         other => panic!("unexpected right of IN: {other:?}"),
                     }
                 }

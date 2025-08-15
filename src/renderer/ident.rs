@@ -1,5 +1,7 @@
+use crate::renderer::config::FoldCase;
+
 use super::config::{Dialect, QuoteMode, SqlRenderCfg};
-use std::{borrow::Cow, cell::OnceCell, sync::OnceLock};
+use std::{borrow::Cow, cell::OnceCell, collections::HashSet, sync::OnceLock};
 
 fn is_simple_ident(s: &str) -> bool {
     let mut it = s.chars();
@@ -38,19 +40,14 @@ const COMMON_KEYWORDS: &[&str] = &[
     "constraint",
 ];
 
-static SORTED_KEYWORDS: OnceLock<Vec<&'static str>> = OnceLock::new();
+static KW_SET: OnceLock<HashSet<&'static str>> = OnceLock::new();
 
-fn sorted_keywords() -> &'static [&'static str] {
-    SORTED_KEYWORDS.get_or_init(|| {
-        let mut v = COMMON_KEYWORDS.to_vec();
-        v.sort_unstable();
-        v
-    })
+fn kw_set() -> &'static HashSet<&'static str> {
+    KW_SET.get_or_init(|| COMMON_KEYWORDS.iter().copied().collect())
 }
 
 fn is_common_keyword(s: &str) -> bool {
-    let s = s.to_ascii_lowercase();
-    sorted_keywords().binary_search(&&*s).is_ok()
+    kw_set().contains(&*s.to_ascii_lowercase())
 }
 
 fn escape_body<'a>(s: &'a str, dialect: Dialect) -> Cow<'a, str> {
@@ -86,13 +83,22 @@ pub fn quote_ident_always(name: &str, dialect: Dialect) -> String {
 }
 
 pub fn quote_ident(name: &str, cfg: &SqlRenderCfg) -> String {
+    let name = if let Some(fold) = cfg.fold_idents {
+        match fold {
+            FoldCase::Lower => name.to_ascii_lowercase(),
+            FoldCase::Upper => name.to_ascii_uppercase(),
+        }
+    } else {
+        name.to_string()
+    };
+
     match cfg.quote {
-        QuoteMode::Always => quote_ident_always(name, cfg.dialect),
+        QuoteMode::Always => quote_ident_always(&name, cfg.dialect),
         QuoteMode::Smart { preserve_case } => {
-            if preserve_case || !is_simple_ident(name) || is_common_keyword(name) {
-                quote_ident_always(name, cfg.dialect)
+            if preserve_case || !is_simple_ident(&name) || is_common_keyword(&name) {
+                quote_ident_always(&name, cfg.dialect)
             } else {
-                name.to_string()
+                name
             }
         }
     }
@@ -105,7 +111,13 @@ where
 {
     parts
         .into_iter()
-        .map(|p| quote_ident(p, cfg))
+        .map(|p| {
+            if p == "*" {
+                "*".to_string()
+            } else {
+                quote_ident(p, cfg)
+            }
+        })
         .collect::<Vec<_>>()
         .join(".")
 }
