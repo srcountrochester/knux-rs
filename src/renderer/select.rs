@@ -1,9 +1,10 @@
 use crate::renderer::config::MysqlLimitStyle;
+use crate::renderer::ident::push_quoted_path;
 
 use super::ast as R;
 use super::ast::*;
 use super::config::{Dialect, SqlRenderCfg};
-use super::ident::{quote_ident, quote_path};
+use super::ident::quote_ident;
 use super::writer::SqlWriter;
 
 pub fn render_sql_query(q: &R::Query, cfg: &SqlRenderCfg) -> String {
@@ -17,9 +18,7 @@ pub fn render_sql_query(q: &R::Query, cfg: &SqlRenderCfg) -> String {
         }
         w.push(" ");
         for (i, cte) in with.ctes.iter().enumerate() {
-            if i > 0 {
-                w.push(", ");
-            }
+            w.push_sep(i, ", ");
             // name [(col...)] AS ( <query> )
             w.push(&quote_ident(&cte.name, cfg));
             if !cte.columns.is_empty() {
@@ -46,9 +45,7 @@ pub fn render_sql_query(q: &R::Query, cfg: &SqlRenderCfg) -> String {
     if !q.order_by.is_empty() {
         w.push(" ORDER BY ");
         for (i, oi) in q.order_by.iter().enumerate() {
-            if i > 0 {
-                w.push(", ");
-            }
+            w.push_sep(i, ", ");
 
             // ── NEW: эмуляция NULLS LAST вне Postgres
             if !matches!(cfg.dialect, Dialect::Postgres)
@@ -85,18 +82,18 @@ pub fn render_sql_query(q: &R::Query, cfg: &SqlRenderCfg) -> String {
     match (cfg.dialect, cfg.mysql_limit_style, q.limit, q.offset) {
         (Dialect::MySQL, MysqlLimitStyle::OffsetCommaLimit, Some(l), Some(o)) => {
             w.push(" LIMIT ");
-            w.push(o.to_string());
+            w.push_u64(o);
             w.push(", ");
-            w.push(l.to_string());
+            w.push_u64(l);
         }
         _ => {
             if let Some(l) = q.limit {
                 w.push(" LIMIT ");
-                w.push(l.to_string());
+                w.push_u64(l);
             }
             if let Some(o) = q.offset {
                 w.push(" OFFSET ");
-                w.push(o.to_string());
+                w.push_u64(o);
             }
         }
     }
@@ -141,9 +138,7 @@ pub fn render_select(sel: &Select, cfg: &SqlRenderCfg, cap: usize) -> String {
             Dialect::Postgres => {
                 w.push("DISTINCT ON (");
                 for (i, e) in sel.distinct_on.iter().enumerate() {
-                    if i > 0 {
-                        w.push(", ");
-                    }
+                    w.push_sep(i, ", ");
                     render_expr(&mut w, e, cfg);
                 }
                 w.push(") ");
@@ -161,9 +156,7 @@ pub fn render_select(sel: &Select, cfg: &SqlRenderCfg, cap: usize) -> String {
         w.push("*");
     } else {
         for (i, it) in sel.items.iter().enumerate() {
-            if i > 0 {
-                w.push(", ");
-            }
+            w.push_sep(i, ", ");
             render_select_item(&mut w, it, cfg);
         }
     }
@@ -204,9 +197,7 @@ pub fn render_select(sel: &Select, cfg: &SqlRenderCfg, cap: usize) -> String {
                 {
                     w.push(" GROUP BY ROLLUP (");
                     for (i, e) in sel.group_by.iter().enumerate() {
-                        if i > 0 {
-                            w.push(", ");
-                        }
+                        w.push_sep(i, ", ");
                         render_expr(&mut w, e, cfg);
                     }
                     w.push(")");
@@ -217,18 +208,14 @@ pub fn render_select(sel: &Select, cfg: &SqlRenderCfg, cap: usize) -> String {
                 {
                     w.push(" GROUP BY CUBE (");
                     for (i, e) in sel.group_by.iter().enumerate() {
-                        if i > 0 {
-                            w.push(", ");
-                        }
+                        w.push_sep(i, ", ");
                         render_expr(&mut w, e, cfg);
                     }
                     w.push(")");
                 } else {
                     w.push(" GROUP BY ");
                     for (i, e) in sel.group_by.iter().enumerate() {
-                        if i > 0 {
-                            w.push(", ");
-                        }
+                        w.push_sep(i, ", ");
                         render_expr(&mut w, e, cfg);
                     }
                 }
@@ -238,9 +225,7 @@ pub fn render_select(sel: &Select, cfg: &SqlRenderCfg, cap: usize) -> String {
                 // MySQL поддерживает только WITH ROLLUP
                 w.push(" GROUP BY ");
                 for (i, e) in sel.group_by.iter().enumerate() {
-                    if i > 0 {
-                        w.push(", ");
-                    }
+                    w.push_sep(i, ", ");
                     render_expr(&mut w, e, cfg);
                 }
                 if sel
@@ -256,9 +241,7 @@ pub fn render_select(sel: &Select, cfg: &SqlRenderCfg, cap: usize) -> String {
                 // Нет расширений — печатаем обычный GROUP BY
                 w.push(" GROUP BY ");
                 for (i, e) in sel.group_by.iter().enumerate() {
-                    if i > 0 {
-                        w.push(", ");
-                    }
+                    w.push_sep(i, ", ");
                     render_expr(&mut w, e, cfg);
                 }
             }
@@ -273,9 +256,7 @@ pub fn render_select(sel: &Select, cfg: &SqlRenderCfg, cap: usize) -> String {
     if !sel.order_by.is_empty() {
         w.push(" ORDER BY ");
         for (i, oi) in sel.order_by.iter().enumerate() {
-            if i > 0 {
-                w.push(", ");
-            }
+            w.push_sep(i, ", ");
             let emulate_nulls =
                 !matches!(cfg.dialect, Dialect::Postgres) && cfg.emulate_nulls_ordering;
 
@@ -306,18 +287,18 @@ pub fn render_select(sel: &Select, cfg: &SqlRenderCfg, cap: usize) -> String {
     match (cfg.dialect, cfg.mysql_limit_style, sel.limit, sel.offset) {
         (Dialect::MySQL, MysqlLimitStyle::OffsetCommaLimit, Some(l), Some(o)) => {
             w.push(" LIMIT ");
-            w.push(o.to_string()); // offset
+            w.push_u64(o); // offset
             w.push(", ");
-            w.push(l.to_string()); // count
+            w.push_u64(l); // count
         }
         _ => {
             if let Some(l) = sel.limit {
                 w.push(" LIMIT ");
-                w.push(l.to_string());
+                w.push_u64(l);
             }
             if let Some(o) = sel.offset {
                 w.push(" OFFSET ");
-                w.push(o.to_string());
+                w.push_u64(o);
             }
         }
     }
@@ -361,17 +342,12 @@ fn render_table_ref(w: &mut SqlWriter, t: &TableRef, cfg: &SqlRenderCfg) {
             alias,
         } => {
             if let Some(s) = schema {
-                w.push(&quote_path([s.as_str(), name.as_str()], cfg));
+                push_quoted_path(w, [s.as_str(), name.as_str()], cfg);
             } else {
                 w.push(&quote_ident(name, cfg));
             }
             if let Some(a) = alias {
-                if cfg.emit_as_for_table_alias {
-                    w.push(" AS ");
-                } else {
-                    w.push(" ");
-                }
-                w.push(&quote_ident(a, cfg));
+                push_alias(w, a, cfg, cfg.emit_as_for_table_alias);
             }
         }
         TableRef::Subquery { query, alias } => {
@@ -380,8 +356,7 @@ fn render_table_ref(w: &mut SqlWriter, t: &TableRef, cfg: &SqlRenderCfg) {
             w.push(inner);
             w.push(")");
             if let Some(a) = alias {
-                w.push(" AS ");
-                w.push(&quote_ident(a, cfg));
+                push_alias(w, a, cfg, cfg.emit_as_for_table_alias);
             }
         }
     }
@@ -414,9 +389,7 @@ fn render_join(w: &mut SqlWriter, j: &Join, cfg: &SqlRenderCfg) {
         } else if let Some(cols) = &j.using_cols {
             w.push(" USING (");
             for (i, c) in cols.iter().enumerate() {
-                if i > 0 {
-                    w.push(", ");
-                }
+                w.push_sep(i, ", ");
                 w.push(&quote_ident(c, cfg));
             }
             w.push(")");
@@ -431,9 +404,7 @@ fn render_expr(w: &mut SqlWriter, e: &Expr, cfg: &SqlRenderCfg) {
         Expr::Tuple(xs) => {
             w.push("(");
             for (i, x) in xs.iter().enumerate() {
-                if i > 0 {
-                    w.push(", ");
-                }
+                w.push_sep(i, ", ");
                 render_expr(w, x, cfg);
             }
             w.push(")");
@@ -471,8 +442,7 @@ fn render_expr(w: &mut SqlWriter, e: &Expr, cfg: &SqlRenderCfg) {
             }
         }
         Expr::Ident { path } => {
-            let parts: Vec<&str> = path.iter().map(|s| s.as_str()).collect();
-            w.push(&quote_path(parts, cfg));
+            push_quoted_path(w, path.iter().map(|s| s.as_str()), cfg);
         }
         Expr::Bind => w.push_placeholder(),
         Expr::String(s) => {
@@ -541,9 +511,7 @@ fn render_expr(w: &mut SqlWriter, e: &Expr, cfg: &SqlRenderCfg) {
             w.push(&name);
             w.push("(");
             for (i, a) in args.iter().enumerate() {
-                if i > 0 {
-                    w.push(", ");
-                }
+                w.push_sep(i, ", ");
                 render_expr(w, a, cfg);
             }
             w.push(")");
@@ -588,18 +556,14 @@ fn render_expr(w: &mut SqlWriter, e: &Expr, cfg: &SqlRenderCfg) {
             w.push(&name);
             w.push("(");
             for (i, a) in args.iter().enumerate() {
-                if i > 0 {
-                    w.push(", ");
-                }
+                w.push_sep(i, ", ");
                 render_expr(w, a, cfg);
             }
             w.push(") OVER (");
             if !window.partition_by.is_empty() {
                 w.push("PARTITION BY ");
                 for (i, e) in window.partition_by.iter().enumerate() {
-                    if i > 0 {
-                        w.push(", ");
-                    }
+                    w.push_sep(i, ", ");
                     render_expr(w, e, cfg);
                 }
                 if !window.order_by.is_empty() {
@@ -609,9 +573,7 @@ fn render_expr(w: &mut SqlWriter, e: &Expr, cfg: &SqlRenderCfg) {
             if !window.order_by.is_empty() {
                 w.push("ORDER BY ");
                 for (i, oi) in window.order_by.iter().enumerate() {
-                    if i > 0 {
-                        w.push(", ");
-                    }
+                    w.push_sep(i, ", ");
                     render_expr(w, &oi.expr, cfg);
                     match oi.dir {
                         OrderDirection::Asc => w.push(" ASC"),
@@ -633,4 +595,14 @@ fn render_paren_if_needed(w: &mut SqlWriter, e: &Expr, cfg: &SqlRenderCfg) {
         }
         _ => render_expr(w, e, cfg),
     }
+}
+
+#[inline]
+fn push_alias(w: &mut SqlWriter, alias: &str, cfg: &SqlRenderCfg, emit_as: bool) {
+    if emit_as {
+        w.push(" AS ");
+    } else {
+        w.push(" ");
+    }
+    w.push(&quote_ident(alias, cfg));
 }

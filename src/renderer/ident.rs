@@ -1,7 +1,7 @@
 use crate::renderer::config::FoldCase;
 
 use super::config::{Dialect, QuoteMode, SqlRenderCfg};
-use std::{borrow::Cow, cell::OnceCell, collections::HashSet, sync::OnceLock};
+use std::{borrow::Cow, collections::HashSet, sync::OnceLock};
 
 fn is_simple_ident(s: &str) -> bool {
     let mut it = s.chars();
@@ -52,20 +52,8 @@ fn is_common_keyword(s: &str) -> bool {
 
 fn escape_body<'a>(s: &'a str, dialect: Dialect) -> Cow<'a, str> {
     match dialect {
-        Dialect::Postgres | Dialect::SQLite => {
-            if s.contains('"') {
-                Cow::Owned(s.replace('"', "\"\""))
-            } else {
-                Cow::Borrowed(s)
-            }
-        }
-        Dialect::MySQL => {
-            if s.contains('`') {
-                Cow::Owned(s.replace('`', "``"))
-            } else {
-                Cow::Borrowed(s)
-            }
-        }
+        Dialect::Postgres | Dialect::SQLite => escape_double_quotes(s),
+        Dialect::MySQL => escape_backticks(s),
     }
 }
 
@@ -82,6 +70,7 @@ pub fn quote_ident_always(name: &str, dialect: Dialect) -> String {
     }
 }
 
+#[inline]
 pub fn quote_ident(name: &str, cfg: &SqlRenderCfg) -> String {
     let name = if let Some(fold) = cfg.fold_idents {
         match fold {
@@ -104,20 +93,54 @@ pub fn quote_ident(name: &str, cfg: &SqlRenderCfg) -> String {
     }
 }
 
-/// schema.table / table.column / schema.table.column
-pub fn quote_path<'a, I>(parts: I, cfg: &SqlRenderCfg) -> String
+#[inline]
+fn escape_double_quotes(s: &str) -> Cow<'_, str> {
+    if !s.as_bytes().contains(&b'"') {
+        return Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len() + 4);
+    for b in s.bytes() {
+        if b == b'"' {
+            out.push('"');
+            out.push('"');
+        } else {
+            out.push(b as char);
+        }
+    }
+    Cow::Owned(out)
+}
+
+#[inline]
+fn escape_backticks(s: &str) -> Cow<'_, str> {
+    if !s.as_bytes().contains(&b'`') {
+        return Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len() + 4);
+    for b in s.bytes() {
+        if b == b'`' {
+            out.push('`');
+            out.push('`');
+        } else {
+            out.push(b as char);
+        }
+    }
+    Cow::Owned(out)
+}
+
+pub fn push_quoted_path<'a, I>(w: &mut super::writer::SqlWriter, parts: I, cfg: &SqlRenderCfg)
 where
     I: IntoIterator<Item = &'a str>,
 {
-    parts
-        .into_iter()
-        .map(|p| {
-            if p == "*" {
-                "*".to_string()
-            } else {
-                quote_ident(p, cfg)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(".")
+    let mut i = 0;
+    for p in parts {
+        if i > 0 {
+            w.push(".");
+        }
+        if p == "*" {
+            w.push("*");
+        } else {
+            w.push(&quote_ident(p, cfg));
+        }
+        i += 1;
+    }
 }

@@ -1,6 +1,7 @@
 #![allow(clippy::needless_borrow)]
 use crate::renderer::config::{Dialect, QuoteMode, SqlRenderCfg};
-use crate::renderer::ident::{quote_ident, quote_ident_always, quote_path};
+use crate::renderer::ident::{push_quoted_path, quote_ident, quote_ident_always};
+use crate::renderer::writer::SqlWriter;
 
 fn cfg(dialect: Dialect, mode: QuoteMode) -> SqlRenderCfg {
     SqlRenderCfg {
@@ -9,6 +10,15 @@ fn cfg(dialect: Dialect, mode: QuoteMode) -> SqlRenderCfg {
         // placeholder стиль тут не важен, но если поле есть в конфиге — заполни своё значение
         ..SqlRenderCfg::default()
     }
+}
+
+fn render_path<'a, I>(parts: I, cfg: &SqlRenderCfg) -> String
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let mut w = SqlWriter::new(64, cfg.placeholders);
+    push_quoted_path(&mut w, parts, cfg);
+    w.finish()
 }
 
 #[test]
@@ -100,29 +110,29 @@ fn smart_mode_quotes_keywords_and_preserve_case_quotes() {
 }
 
 #[test]
-fn quote_path_joins_and_quotes_each_segment() {
+fn quote_path_joins_and_quotes_each_segment_via_push() {
     let pg = cfg(Dialect::Postgres, QuoteMode::Always);
     let my = cfg(Dialect::MySQL, QuoteMode::Always);
     let sq = cfg(Dialect::SQLite, QuoteMode::Always);
 
     // schema.table
-    assert_eq!(quote_path(["public", "Users"], &pg), r#""public"."Users""#);
-    assert_eq!(quote_path(["public", "Users"], &my), "`public`.`Users`");
-    assert_eq!(quote_path(["public", "Users"], &sq), r#""public"."Users""#);
+    assert_eq!(render_path(["public", "Users"], &pg), r#""public"."Users""#);
+    assert_eq!(render_path(["public", "Users"], &my), "`public`.`Users`");
+    assert_eq!(render_path(["public", "Users"], &sq), r#""public"."Users""#);
 
     // table.column
-    assert_eq!(quote_path(["Users", "id"], &pg), r#""Users"."id""#);
+    assert_eq!(render_path(["Users", "id"], &pg), r#""Users"."id""#);
 
     // ключевые слова внутри пути — тоже квотим
-    assert_eq!(quote_path(["public", "order"], &pg), r#""public"."order""#);
-    assert_eq!(quote_path(["public", "order"], &my), "`public`.`order`");
+    assert_eq!(render_path(["public", "order"], &pg), r#""public"."order""#);
+    assert_eq!(render_path(["public", "order"], &my), "`public`.`order`");
 }
 
 #[test]
-fn escaping_inside_path_segments() {
+fn escaping_inside_path_segments_via_push() {
     let pg = cfg(Dialect::Postgres, QuoteMode::Always);
     let my = cfg(Dialect::MySQL, QuoteMode::Always);
 
-    assert_eq!(quote_path([r#"a"b"#, "tbl"], &pg), r#""a""b"."tbl""#);
-    assert_eq!(quote_path(["a`b", "tbl"], &my), "`a``b`.`tbl`");
+    assert_eq!(render_path([r#"a"b"#, "tbl"], &pg), r#""a""b"."tbl""#);
+    assert_eq!(render_path(["a`b", "tbl"], &my), "`a``b`.`tbl`");
 }

@@ -1,6 +1,7 @@
 use crate::renderer::{
     config::{Dialect, QuoteMode, SqlRenderCfg},
-    ident::{quote_ident, quote_ident_always, quote_path},
+    ident::{push_quoted_path, quote_ident, quote_ident_always},
+    writer::SqlWriter,
 };
 
 fn cfg(dialect: Dialect, mode: QuoteMode) -> SqlRenderCfg {
@@ -9,6 +10,15 @@ fn cfg(dialect: Dialect, mode: QuoteMode) -> SqlRenderCfg {
         quote: mode,
         ..SqlRenderCfg::default()
     }
+}
+
+fn render_path<'a, I>(parts: I, cfg: &SqlRenderCfg) -> String
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let mut w = SqlWriter::new(64, cfg.placeholders);
+    push_quoted_path(&mut w, parts, cfg);
+    w.finish()
 }
 
 #[test]
@@ -47,9 +57,9 @@ fn smart_mode_preserve_case_false_basic_rules_pg() {
     assert_eq!(quote_ident("SeLeCt", &cfg_pg), r#""SeLeCt""#);
 
     // path: смешанное квотирование
-    assert_eq!(quote_path(["public", "users"], &cfg_pg), r#"public.users"#);
+    assert_eq!(render_path(["public", "users"], &cfg_pg), r#"public.users"#);
     assert_eq!(
-        quote_path(["public", "order"], &cfg_pg),
+        render_path(["public", "order"], &cfg_pg),
         r#"public."order""#
     );
 }
@@ -78,8 +88,8 @@ fn smart_mode_preserve_case_false_mysql_and_sqlite() {
     assert_eq!(quote_ident("from", &cfg_sq), r#""from""#);
 
     // экранирование в path
-    assert_eq!(quote_path(["a`b", "tbl"], &cfg_my), "`a``b`.tbl");
-    assert_eq!(quote_path([r#"a"b"#, "tbl"], &cfg_sq), r#""a""b".tbl"#);
+    assert_eq!(render_path(["a`b", "tbl"], &cfg_my), "`a``b`.tbl");
+    assert_eq!(render_path([r#"a"b"#, "tbl"], &cfg_sq), r#""a""b".tbl"#);
 }
 
 #[test]
@@ -110,12 +120,15 @@ fn smart_mode_preserve_case_true_forces_quotes() {
 
     // path — каждый сегмент в кавычках
     assert_eq!(
-        quote_path(["public", "users"], &cfg_pg),
+        render_path(["public", "users"], &cfg_pg),
         r#""public"."users""#
     );
-    assert_eq!(quote_path(["public", "users"], &cfg_my), "`public`.`users`");
     assert_eq!(
-        quote_path(["public", "users"], &cfg_sq),
+        render_path(["public", "users"], &cfg_my),
+        "`public`.`users`"
+    );
+    assert_eq!(
+        render_path(["public", "users"], &cfg_sq),
         r#""public"."users""#
     );
 }
@@ -140,6 +153,6 @@ fn smart_mode_with_keyword_and_mixed_path() {
     assert_eq!(quote_ident("group", &cfg_my), "`group`");
 
     // смешанный путь: schema безопасен → без кавычек, таблица keyword → квотится
-    assert_eq!(quote_path(["app", "order"], &cfg_pg), r#"app."order""#);
-    assert_eq!(quote_path(["app", "order"], &cfg_my), "app.`order`");
+    assert_eq!(render_path(["app", "order"], &cfg_pg), r#"app."order""#);
+    assert_eq!(render_path(["app", "order"], &cfg_my), "app.`order`");
 }

@@ -167,7 +167,7 @@ fn set_operations_parentheses_across_dialects() {
 #[test]
 fn mysql_limit_offset_comma_style() {
     // MySQL: LIMIT offset, count
-    let mut sel = base_select(vec![R::SelectItem::Expr {
+    let sel = base_select(vec![R::SelectItem::Expr {
         expr: R::Expr::Number("1".into()),
         alias: None,
     }]);

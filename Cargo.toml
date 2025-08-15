@@ -28,6 +28,7 @@ thiserror = "2.0.14"
 url = "2"
 humantime = "2"
 smallvec = "1"
+itoa = "1"
 
 # опциональные зависимости
 time = { version = "0.3", optional = true, features = ["macros", "parsing"] }

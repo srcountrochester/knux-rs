@@ -42,4 +42,18 @@ impl SqlWriter {
     pub fn finish(self) -> String {
         self.buf
     }
+
+    #[inline]
+    pub fn push_u64(&mut self, v: u64) {
+        use itoa::Buffer;
+        let mut buf = Buffer::new();
+        self.buf.push_str(buf.format(v));
+    }
+
+    #[inline]
+    pub fn push_sep(&mut self, i: usize, sep: &str) {
+        if i > 0 {
+            self.buf.push_str(sep);
+        }
+    }
 }

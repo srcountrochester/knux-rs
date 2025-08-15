@@ -817,6 +817,7 @@ fn split_object_name(obj: &ObjectName) -> (Option<String>, String) {
     }
 }
 
+#[inline]
 fn literal_u64(e: &SExpr) -> Option<u64> {
     match e {
         // VALUE -> ValueWithSpan -> Value::Number(...)
@@ -852,6 +853,7 @@ fn list_to_tuple(list: &[SExpr]) -> R::Expr {
     }
 }
 
+#[inline]
 fn map_bin_op(op: &SBinOp) -> R::BinOp {
     use R::BinOp as B;
     match op {
@@ -876,6 +878,7 @@ fn map_bin_op(op: &SBinOp) -> R::BinOp {
     }
 }
 
+#[inline]
 fn map_un_op(op: &SUnOp) -> R::UnOp {
     match op {
         SUnOp::Not => R::UnOp::Not,
