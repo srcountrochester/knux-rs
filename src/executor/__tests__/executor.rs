@@ -5,6 +5,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use sqlx::{Executor, FromRow};
 
+#[cfg(feature = "sqlite")]
 #[tokio::test]
 async fn connect_sqlite_and_init_sql() {
     // инициализация с init SQL (SQLite-подобные PRAGMA, без schema и без postgres)
@@ -31,6 +32,7 @@ struct User {
     is_active: bool,
 }
 
+#[cfg(feature = "sqlite")]
 #[tokio::test]
 async fn fetch_typed_binds_work() {
     let cfg = ExecutorConfig::builder()

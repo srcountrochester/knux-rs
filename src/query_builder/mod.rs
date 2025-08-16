@@ -1,27 +1,30 @@
-use crate::{executor::DbPool, param::Param, query_builder::args::QBClosure, renderer::Dialect};
+use std::borrow::Cow;
+
+use crate::{executor::DbPool, param::Param, renderer::Dialect};
 use smallvec::{SmallVec, smallvec};
-use sqlparser::ast::{
-    self, Expr, GroupByExpr, Ident, Query, Select, SelectFlavor, SelectItem, TableAlias,
-    TableFactor, TableWithJoins, WildcardAdditionalOptions, helpers::attached_token::AttachedToken,
-};
+use sqlparser::ast::{Expr, Join, SelectItem};
 
 mod __tests__;
 mod alias;
 mod args;
+mod ast;
 mod error;
 mod from;
+mod join;
 mod schema;
 mod select;
 mod sql;
+mod where_clause;
 
-pub use error::{Error, Result};
+use ast::FromItem;
+pub use error::{BuilderErrorList, Error, Result};
 
-#[derive(Debug)]
-enum FromItem {
-    TableName(sqlparser::ast::ObjectName),
-    Subquery(Box<QueryBuilder>),
-    SubqueryClosure(QBClosure),
-}
+#[cfg(feature = "postgres")]
+const DEFAULT_DIALECT: Dialect = Dialect::Postgres;
+#[cfg(feature = "mysql")]
+const DEFAULT_DIALECT: Dialect = Dialect::MySQL;
+#[cfg(feature = "sqlite")]
+const DEFAULT_DIALECT: Dialect = Dialect::SQLite;
 
 #[derive(Debug)]
 pub struct QueryBuilder {
@@ -34,6 +37,8 @@ pub struct QueryBuilder {
     pub(crate) pending_schema: Option<String>,
     pub alias: Option<String>,
     pub(crate) dialect: Dialect,
+    builder_errors: SmallVec<[Cow<'static, str>; 2]>,
+    pub(self) from_joins: SmallVec<[SmallVec<[Join; 2]>; 1]>,
 }
 
 impl QueryBuilder {
@@ -44,15 +49,12 @@ impl QueryBuilder {
             from_items: smallvec![],
             where_clause: None,
             params: smallvec![],
+            builder_errors: smallvec![],
             default_schema: schema,
             pending_schema: None,
+            from_joins: smallvec![],
             alias: None,
-            #[cfg(feature = "sqlite")]
-            dialect: Dialect::SQLite,
-            #[cfg(feature = "postgres")]
-            dialect: Dialect::Postgres,
-            #[cfg(feature = "mysql")]
-            dialect: Dialect::MySQL,
+            dialect: DEFAULT_DIALECT,
         }
     }
 
@@ -64,15 +66,12 @@ impl QueryBuilder {
             from_items: smallvec![],
             where_clause: None,
             params: smallvec![],
+            builder_errors: smallvec![],
+            from_joins: smallvec![],
             default_schema: None,
             pending_schema: None,
             alias: None,
-            #[cfg(feature = "sqlite")]
-            dialect: Dialect::SQLite,
-            #[cfg(feature = "postgres")]
-            dialect: Dialect::Postgres,
-            #[cfg(feature = "mysql")]
-            dialect: Dialect::MySQL,
+            dialect: DEFAULT_DIALECT,
         }
     }
 
@@ -107,118 +106,35 @@ impl QueryBuilder {
         self
     }
 
-    pub(crate) fn build_query_ast(mut self) -> Result<(Query, Vec<Param>)> {
-        // проекция по умолчанию: SELECT *
-        let projection = if self.select_items.is_empty() {
-            let mut sv = SmallVec::new();
-            sv.push(SelectItem::Wildcard(Default::default()));
-            sv
+    #[inline]
+    pub(crate) fn push_builder_error<S: Into<Cow<'static, str>>>(&mut self, msg: S) {
+        self.builder_errors.push(msg.into());
+    }
+
+    /// Быстрая проверка наличия ошибок билдера.
+    #[inline]
+    pub fn has_builder_errors(&self) -> bool {
+        !self.builder_errors.is_empty()
+    }
+
+    #[inline]
+    fn take_builder_error_list(&mut self) -> Option<BuilderErrorList> {
+        if self.builder_errors.is_empty() {
+            None
         } else {
-            self.select_items
-        };
-
-        let mut params = self.params.into_vec();
-        // FROM: либо один TableWithJoins, либо пусто
-        let mut from: Vec<TableWithJoins> = Vec::with_capacity(self.from_items.len());
-
-        for item in self.from_items.into_iter() {
-            match item {
-                FromItem::TableName(name) => from.push(TableWithJoins {
-                    joins: vec![],
-                    relation: TableFactor::Table {
-                        name,
-                        alias: None,
-                        args: None,
-                        with_hints: vec![],
-                        partitions: vec![],
-                        version: None,
-                        index_hints: vec![],
-                        json_path: None,
-                        sample: None,
-                        with_ordinality: false,
-                    },
-                }),
-                FromItem::Subquery(qb) => {
-                    let alias = qb.alias.clone();
-                    let (q, mut p) = qb.build_query_ast()?;
-                    if !p.is_empty() {
-                        params.append(&mut p);
-                    }
-                    from.push(TableWithJoins {
-                        joins: vec![],
-                        relation: TableFactor::Derived {
-                            lateral: false,
-                            subquery: Box::new(q),
-                            alias: alias.map(|a| TableAlias {
-                                name: Ident::new(a),
-                                columns: vec![],
-                            }),
-                        },
-                    })
-                }
-                FromItem::SubqueryClosure(closure) => {
-                    let built = closure.apply(QueryBuilder::new_empty());
-                    let alias = built.alias.clone();
-                    let (q, mut p) = built.build_query_ast()?;
-                    if !p.is_empty() {
-                        params.append(&mut p);
-                    }
-                    from.push(TableWithJoins {
-                        joins: vec![],
-                        relation: TableFactor::Derived {
-                            lateral: false,
-                            subquery: Box::new(q),
-                            alias: alias.map(|a| TableAlias {
-                                name: Ident::new(a),
-                                columns: vec![],
-                            }),
-                        },
-                    })
-                }
-            }
+            // Передаём SmallVec в From — он сконвертит в BuilderErrorList
+            Some(BuilderErrorList::from(std::mem::take(
+                &mut self.builder_errors,
+            )))
         }
+    }
 
-        let selection = self.where_clause;
-
-        let select = Select {
-            distinct: None,
-            top: None,
-            projection: projection.into_vec(),
-            into: None,
-            from,
-            lateral_views: vec![],
-            selection,
-            group_by: GroupByExpr::Expressions(vec![], vec![]),
-            cluster_by: vec![],
-            distribute_by: vec![],
-            sort_by: vec![],
-            having: None,
-            named_window: vec![],
-            qualify: None,
-            connect_by: None,
-            exclude: None,
-            prewhere: None,
-            value_table_mode: None,
-            top_before_distinct: false,
-            window_before_qualify: false,
-            flavor: SelectFlavor::Standard,
-            select_token: AttachedToken::empty(),
-        };
-
-        let query = Query {
-            with: None,
-            body: Box::new(ast::SetExpr::Select(Box::new(select))),
-            order_by: None,
-            fetch: None,
-            locks: vec![],
-            for_clause: None,
-            format_clause: None,
-            limit_clause: None,
-            pipe_operators: vec![],
-            settings: None,
-        };
-
-        Ok((query, params))
+    #[inline]
+    fn extend_params<I>(&mut self, it: I)
+    where
+        I: IntoIterator<Item = crate::param::Param>,
+    {
+        self.params.extend(it);
     }
 }
 

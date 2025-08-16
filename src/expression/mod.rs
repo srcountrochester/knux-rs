@@ -30,7 +30,10 @@ pub mod aggr;
 pub mod alias;
 pub mod cmp;
 pub mod helpers;
+pub mod join_on;
 pub mod logic;
 pub mod math;
+pub mod path;
 
-pub use helpers::{col, lit, raw, val};
+pub use helpers::{col, lit, raw, schema, table, val};
+pub use join_on::{JoinOnBuilder, JoinOnExt};

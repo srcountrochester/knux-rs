@@ -1,6 +1,7 @@
-use crate::expression::{col, lit, raw, val};
+use crate::expression::{col, lit, raw, schema, table, val};
 use crate::param::Param;
 use sqlparser::ast;
+use sqlparser::ast::Expr as SqlExpr;
 
 #[test]
 fn col_builds_identifier_and_compound() {
@@ -108,5 +109,36 @@ fn col_three_part_compound() {
             assert_eq!(parts[2].value, "c");
         }
         _ => panic!("expected CompoundIdentifier"),
+    }
+}
+
+#[test]
+fn table_simple_identifier() {
+    let e = table("users");
+    match e.expr {
+        SqlExpr::Identifier(id) => assert_eq!(id.value, "users"),
+        other => panic!("expected Identifier, got {:?}", other),
+    }
+}
+
+#[test]
+fn table_compound_identifier() {
+    let e = table("public.users");
+    match e.expr {
+        SqlExpr::CompoundIdentifier(parts) => {
+            assert_eq!(parts.len(), 2);
+            assert_eq!(parts[0].value, "public");
+            assert_eq!(parts[1].value, "users");
+        }
+        other => panic!("expected CompoundIdentifier, got {:?}", other),
+    }
+}
+
+#[test]
+fn schema_helper_produces_identifier() {
+    let e = schema("public");
+    match e.expr {
+        SqlExpr::Identifier(id) => assert_eq!(id.value, "public"),
+        other => panic!("expected Identifier, got {:?}", other),
     }
 }

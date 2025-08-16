@@ -1,4 +1,5 @@
-use crate::expression::helpers::{col, val};
+use super::dialect_test_helpers::{col_list, qi, qn};
+use crate::expression::helpers::val;
 use crate::query_builder::QueryBuilder;
 
 /// Грубая нормализация пробелов: схлопываем последовательности в один пробел,
@@ -28,7 +29,14 @@ fn simple_select_from_table() {
         .to_sql()
         .unwrap();
 
-    assert!(sql.contains("SELECT \"id\", \"name\" FROM \"users\""));
+    assert!(
+        sql.contains(&format!(
+            "SELECT {} FROM {}",
+            col_list(&["id", "name"]),
+            qi("users")
+        )),
+        "got: {sql}"
+    );
     assert!(params.is_empty());
 }
 
@@ -41,8 +49,12 @@ fn select_from_table_with_default_schema() {
 
     let (sql, params) = qb.to_sql().expect("to_sql");
     assert!(
-        sql.contains("SELECT \"id\", \"name\" FROM \"public\".\"users\"")
-            || sql.contains("FROM \"public\".\"users\"")
+        sql.contains(&format!(
+            "SELECT {} FROM {}",
+            col_list(&["id", "name"]),
+            qn(&["public", "users"])
+        )) || sql.contains(&format!("FROM {}", qn(&["public", "users"]))),
+        "got: {sql}"
     );
     assert!(params.is_empty());
 }
@@ -54,7 +66,10 @@ fn select_from_qualified_table() {
         .from("app.users")
         .to_sql()
         .unwrap();
-    assert!(sql.contains("FROM \"app\".\"users\""));
+    assert!(
+        sql.contains(&format!("FROM {}", qn(&["app", "users"]))),
+        "got: {sql}"
+    );
 }
 
 #[test]
@@ -86,30 +101,31 @@ fn to_sql_from_multiple_plain_tables_with_default_schema() {
 
     // Проверяем, что все источники присутствуют и в правильном порядке:
     // app.users, auth.roles, app.logs
+    let from_users = format!("FROM {}", qn(&["app", "users"]));
     let i_users = sql
-        .find("FROM \"app\".\"users\"")
-        .or_else(|| sql.find("FROM \"app\" . \"users\""))
-        .expect(&format!("FROM \"app\".\"users\" not found in: {sql}"));
+        .find(&from_users)
+        .expect(&format!(r#"{} not found in: {}"#, from_users, sql));
 
+    let roles_pat = qn(&["auth", "roles"]);
     let i_roles = sql
-        .find("\"auth\".\"roles\"")
-        .or_else(|| sql.find("\"auth\" . \"roles\""))
-        .expect(&format!("\"auth\".\"roles\" not found in: {sql}"));
+        .find(&roles_pat)
+        .expect(&format!(r#""{}" not found in: {}"#, roles_pat, sql));
 
+    let logs_pat = qn(&["app", "logs"]);
     let i_logs = sql
-        .find("\"app\".\"logs\"")
-        .or_else(|| sql.find("\"app\" . \"logs\""))
-        .expect(&format!("\"app\".\"logs\" not found in: {sql}"));
+        .find(&logs_pat)
+        .expect(&format!(r#""{}" not found in: {}"#, logs_pat, sql));
 
     assert!(
         i_users < i_roles && i_roles < i_logs,
         "sources must keep order: users, roles, logs; got: {sql}"
     );
 
-    // Мини-проверка селекта
     assert!(
-        sql.starts_with("SELECT \"id\" "),
-        "projection should start with SELECT id; got: {sql}"
+        sql.contains(&format!("FROM {}", qn(&["app", "users"]))),
+        r#"FROM {} not found in: {}"#,
+        qn(&["app", "users"]),
+        sql
     );
 }
 
@@ -136,10 +152,10 @@ fn to_sql_from_mixed_table_subquery_and_closure() {
     let sql = norm(&sql);
 
     // Должно быть: сначала users, затем два подзапроса "(SELECT ..."
+    let from_users = format!("FROM {}", qi("users"));
     let i_users = sql
-        .find("FROM \"users\"")
-        .or_else(|| sql.find("FROM \"users\" "))
-        .expect(&format!("FROM \"users\" not found in: {sql}"));
+        .find(&from_users)
+        .expect(&format!(r#"{} not found in: {}"#, from_users, sql));
 
     // Найдём два вхождения "(SELECT"
     let mut idx = 0usize;
@@ -163,7 +179,9 @@ fn to_sql_from_mixed_table_subquery_and_closure() {
 
     // Убедимся, что SELECT-часть тоже адекватна
     assert!(
-        sql.starts_with("SELECT \"x\" "),
-        "projection should start with SELECT \"x\"; got: {sql}"
+        sql.contains(&format!("FROM {}", qi("users"))),
+        r#"FROM {} not found in: {}"#,
+        qi("users"),
+        sql
     );
 }

@@ -22,6 +22,14 @@ use crate::{param::Param, query_builder::QueryBuilder};
 use config::ExecutorConfig;
 pub use error::{Error, Result};
 
+// ВЕРХ ФАЙЛА: алиасы под активную БД
+#[cfg(feature = "postgres")]
+type DbRow = PgRow;
+#[cfg(feature = "mysql")]
+type DbRow = MySqlRow;
+#[cfg(feature = "sqlite")]
+type DbRow = SqliteRow;
+
 #[derive(Clone, Debug)]
 pub enum DbPool {
     #[cfg(feature = "postgres")]
@@ -201,26 +209,55 @@ impl QueryExecutor {
         QueryBuilder::new(self.pool.clone(), self.schema.clone())
     }
 
-    #[cfg(feature = "sqlite")]
-    /// Выполнить типизированный SELECT с привязкой параметров.
+    // #[cfg(feature = "sqlite")]
+    // /// Выполнить типизированный SELECT с привязкой параметров.
+    // pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
+    // where
+    //     for<'r> T: sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
+    // {
+    //     match &self.pool {
+    //         #[cfg(feature = "sqlite")]
+    //         DbPool::Sqlite(pool) => fetch_typed_sqlite::<T>(pool, sql, params)
+    //             .await
+    //             .map_err(Into::into),
+
+    //         _ => Err(Error::InvalidDBMode),
+    //     }
+    // }
+
+    // #[cfg(feature = "postgres")]
+    // pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
+    // where
+    //     for<'r> T: sqlx::FromRow<'r, PgRow> + Send + Unpin,
+    // {
+    //     match &self.pool {
+    //         #[cfg(feature = "postgres")]
+    //         DbPool::Postgres(pool) => fetch_typed_pg::<T>(pool, sql, params)
+    //             .await
+    //             .map_err(Into::into),
+
+    //         _ => Err(Error::InvalidDBMode),
+    //     }
+    // }
+
+    // #[cfg(feature = "mysql")]
+    // pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
+    // where
+    //     for<'r> T: sqlx::FromRow<'r, MySqlRow> + Send + Unpin,
+    // {
+    //     match &self.pool {
+    //         #[cfg(feature = "mysql")]
+    //         DbPool::MySql(pool) => fetch_typed_mysql::<T>(pool, sql, params)
+    //             .await
+    //             .map_err(Into::into),
+
+    //         _ => Err(Error::InvalidDBMode),
+    //     }
+    // }
+
     pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
     where
-        for<'r> T: sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
-    {
-        match &self.pool {
-            #[cfg(feature = "sqlite")]
-            DbPool::Sqlite(pool) => fetch_typed_sqlite::<T>(pool, sql, params)
-                .await
-                .map_err(Into::into),
-
-            _ => Err(Error::InvalidDBMode),
-        }
-    }
-
-    #[cfg(feature = "postgres")]
-    pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
-    where
-        for<'r> T: sqlx::FromRow<'r, PgRow> + Send + Unpin,
+        for<'r> T: sqlx::FromRow<'r, DbRow> + Send + Unpin,
     {
         match &self.pool {
             #[cfg(feature = "postgres")]
@@ -228,22 +265,15 @@ impl QueryExecutor {
                 .await
                 .map_err(Into::into),
 
-            _ => Err(Error::InvalidDBMode),
-        }
-    }
-
-    #[cfg(feature = "mysql")]
-    pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
-    where
-        for<'r> T: sqlx::FromRow<'r, MySqlRow> + Send + Unpin,
-    {
-        match &self.pool {
             #[cfg(feature = "mysql")]
             DbPool::MySql(pool) => fetch_typed_mysql::<T>(pool, sql, params)
                 .await
                 .map_err(Into::into),
 
-            _ => Err(Error::InvalidDBMode),
+            #[cfg(feature = "sqlite")]
+            DbPool::Sqlite(pool) => fetch_typed_sqlite::<T>(pool, sql, params)
+                .await
+                .map_err(Into::into),
         }
     }
 

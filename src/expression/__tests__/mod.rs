@@ -18,3 +18,9 @@ mod logic;
 
 #[cfg(test)]
 mod math;
+
+#[cfg(test)]
+mod path;
+
+#[cfg(test)]
+mod join_on;

@@ -47,13 +47,39 @@ pub fn lit<S: Into<String>>(s: S) -> Expression {
     }
 }
 
-/// Сырый фрагмент AST (на свой риск). Полезно для функций/операторов, которых ещё нет в DSL.
+/// Сырой фрагмент AST (на свой риск). Полезно для функций/операторов, которых ещё нет в DSL.
 pub fn raw<F>(build: F) -> Expression
 where
     F: FnOnce() -> ast::Expr,
 {
     Expression {
         expr: build(),
+        alias: None,
+        params: smallvec![],
+        mark_distinct_for_next: false,
+    }
+}
+
+/// Сырой идентификатор (таблица/схема), без автоквотинга.
+/// Используется, например, как цель JOIN: join(raw_ident("accounts"), ...)
+pub fn raw_ident<S: Into<String>>(_s: S) -> Expression {
+    // TODO: вернуть Expression с Expr::Identifier/CompoundIdentifier без квотирования
+    todo!()
+}
+
+/// Семантическая ссылка на таблицу/схему. Поддерживает формы:
+/// - "users"
+/// - "public.users"
+/// - "users u"
+/// - "users AS u"
+///
+pub fn table<S: Into<String>>(name: S) -> Expression {
+    col(&name.into())
+}
+
+pub fn schema(name: &str) -> Expression {
+    Expression {
+        expr: ast::Expr::Identifier(ast::Ident::new(name)),
         alias: None,
         params: smallvec![],
         mark_distinct_for_next: false,

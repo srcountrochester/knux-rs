@@ -1,3 +1,4 @@
+use super::dialect_test_helpers::{col_list, qi, qn};
 use crate::expression::helpers::val;
 use crate::query_builder::QueryBuilder;
 
@@ -36,10 +37,16 @@ fn from_subquery_with_alias_via_builder_as() {
     let sql = norm(&sql);
 
     // Принимаем оба стиля печати алиаса: с "AS" и без.
-    let ok = sql.contains("(SELECT \"id\" FROM \"users\") AS \"u\"")
-        || sql.contains("(SELECT \"id\" FROM \"users\") \"u\"");
-
-    assert!(ok, "got: {sql}");
+    assert!(
+        sql.contains(&format!(
+            "SELECT {} FROM (SELECT {} FROM {}) AS {}",
+            qi("x"),
+            qi("id"),
+            qi("users"),
+            qi("u")
+        )),
+        "got: {sql}"
+    );
 }
 
 #[test]
@@ -55,8 +62,8 @@ fn from_closure_subquery_with_alias() {
 
     let sql = norm(&sql);
 
-    let ok = (sql.contains("FROM (SELECT ?") && sql.contains(") AS \"t1\""))
-        || (sql.contains("FROM (SELECT ?") && sql.contains(") \"t1\""));
-
-    assert!(ok, "got: {sql}");
+    assert!(
+        sql.contains(&format!("FROM (SELECT ?) AS {}", qi("t1"))),
+        "got: {sql}"
+    );
 }
