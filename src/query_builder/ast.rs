@@ -1,8 +1,9 @@
 use crate::{param::Param, query_builder::args::QBClosure};
 use smallvec::SmallVec;
 use sqlparser::ast::{
-    GroupByExpr, Ident, Join, ObjectName, Query, Select, SelectFlavor, SelectItem, SetExpr,
-    TableAlias, TableFactor, TableWithJoins, helpers::attached_token::AttachedToken,
+    GroupByExpr, Ident, Join, ObjectName, OrderBy, OrderByExpr, OrderByKind, Query, Select,
+    SelectFlavor, SelectItem, SetExpr, TableAlias, TableFactor, TableWithJoins,
+    helpers::attached_token::AttachedToken,
 };
 
 use super::{BuilderErrorList, Error, QueryBuilder, Result};
@@ -109,11 +110,11 @@ impl QueryBuilder {
             from,
             lateral_views: vec![],
             selection,
-            group_by: GroupByExpr::Expressions(vec![], vec![]),
+            group_by: GroupByExpr::Expressions(self.group_by_items.into_vec(), vec![]),
             cluster_by: vec![],
             distribute_by: vec![],
             sort_by: vec![],
-            having: None,
+            having: self.having_clause,
             named_window: vec![],
             qualify: None,
             connect_by: None,
@@ -126,10 +127,20 @@ impl QueryBuilder {
             select_token: AttachedToken::empty(),
         };
 
+        let order_by_opt = if self.order_by_items.is_empty() {
+            None
+        } else {
+            // в новых версиях sqlparser OrderBy хранит kind + interpolate
+            Some(OrderBy {
+                kind: OrderByKind::Expressions(self.order_by_items.into_vec()),
+                interpolate: None,
+            })
+        };
+
         let query = Query {
             with: None,
             body: Box::new(SetExpr::Select(Box::new(select))),
-            order_by: None,
+            order_by: order_by_opt,
             fetch: None,
             locks: vec![],
             for_clause: None,

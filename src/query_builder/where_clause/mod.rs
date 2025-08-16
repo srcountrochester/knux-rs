@@ -1,6 +1,6 @@
 mod __tests__;
 mod core_fn;
-mod utils;
+pub mod utils;
 mod where_between;
 mod where_exists;
 mod where_in;

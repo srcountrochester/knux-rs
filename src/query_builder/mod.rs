@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{executor::DbPool, param::Param, renderer::Dialect};
 use smallvec::{SmallVec, smallvec};
-use sqlparser::ast::{Expr, Join, SelectItem};
+use sqlparser::ast::{Expr, Join, OrderByExpr, SelectItem};
 
 mod __tests__;
 mod alias;
@@ -10,7 +10,10 @@ mod args;
 mod ast;
 mod error;
 mod from;
+mod group_by;
+mod having;
 mod join;
+mod order_by;
 mod schema;
 mod select;
 mod sql;
@@ -39,6 +42,9 @@ pub struct QueryBuilder {
     pub(crate) dialect: Dialect,
     builder_errors: SmallVec<[Cow<'static, str>; 2]>,
     pub(self) from_joins: SmallVec<[SmallVec<[Join; 2]>; 1]>,
+    pub(self) group_by_items: SmallVec<[Expr; 4]>,
+    pub(self) having_clause: Option<Expr>,
+    pub(self) order_by_items: SmallVec<[OrderByExpr; 4]>,
 }
 
 impl QueryBuilder {
@@ -53,6 +59,9 @@ impl QueryBuilder {
             default_schema: schema,
             pending_schema: None,
             from_joins: smallvec![],
+            group_by_items: smallvec![],
+            order_by_items: smallvec![],
+            having_clause: None,
             alias: None,
             dialect: DEFAULT_DIALECT,
         }
@@ -70,6 +79,9 @@ impl QueryBuilder {
             from_joins: smallvec![],
             default_schema: None,
             pending_schema: None,
+            group_by_items: smallvec![],
+            order_by_items: smallvec![],
+            having_clause: None,
             alias: None,
             dialect: DEFAULT_DIALECT,
         }

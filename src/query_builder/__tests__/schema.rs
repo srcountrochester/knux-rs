@@ -1,4 +1,4 @@
-use super::dialect_test_helpers::{col_list, qi, qn};
+use super::dialect_test_helpers::{qi, qn};
 use crate::query_builder::QueryBuilder;
 
 #[test]

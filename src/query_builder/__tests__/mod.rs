@@ -22,4 +22,10 @@ mod alias;
 #[cfg(test)]
 mod schema;
 
-mod dialect_test_helpers;
+#[cfg(test)]
+mod group_by;
+
+#[cfg(test)]
+mod order_by;
+
+pub mod dialect_test_helpers;
