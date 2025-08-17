@@ -212,6 +212,13 @@ where
     }
 }
 
+impl ArgList for () {
+    #[inline]
+    fn into_vec(self) -> Vec<QBArg> {
+        Vec::new()
+    }
+}
+
 macro_rules! impl_arglist_for_tuple {
     ( $($T:ident),+ ) => {
         impl< $($T),+ > ArgList for ( $($T,)+ )

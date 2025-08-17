@@ -6,9 +6,9 @@ use crate::{
 };
 use smallvec::SmallVec;
 use sqlparser::ast::{
-    Expr as SqlExpr, GroupByExpr, Ident, Join, LimitClause, ObjectName, Offset, OffsetRows,
-    OrderBy, OrderByExpr, OrderByKind, Query, Select, SelectFlavor, SelectItem, SetExpr,
-    TableAlias, TableFactor, TableWithJoins, helpers::attached_token::AttachedToken,
+    Distinct, Expr as SqlExpr, GroupByExpr, Ident, Join, LimitClause, ObjectName, Offset,
+    OffsetRows, OrderBy, OrderByExpr, OrderByKind, Query, Select, SelectFlavor, SelectItem,
+    SetExpr, TableAlias, TableFactor, TableWithJoins, helpers::attached_token::AttachedToken,
 };
 
 use super::{BuilderErrorList, Error, QueryBuilder, Result};
@@ -53,8 +53,23 @@ impl QueryBuilder {
             (exprs, gparams)
         };
 
+        let distinct_opt = if !self.distinct_on_items.is_empty() {
+            let mut on_exprs: Vec<SqlExpr> = Vec::with_capacity(self.distinct_on_items.len());
+            for mut n in self.distinct_on_items.into_vec() {
+                on_exprs.push(n.expr);
+                if !n.params.is_empty() {
+                    params.extend(n.params.drain(..).collect::<Vec<_>>());
+                }
+            }
+            Some(Distinct::On(on_exprs))
+        } else if self.select_distinct {
+            Some(Distinct::Distinct)
+        } else {
+            None
+        };
+
         let select = Select {
-            distinct: None,
+            distinct: distinct_opt,
             top: None,
             projection: projection.into_vec(),
             into: None,

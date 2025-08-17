@@ -2,8 +2,10 @@ use smallvec::SmallVec;
 use sqlparser::ast::JoinConstraint;
 
 use crate::expression::Expression;
+use crate::expression::JoinOnBuilder;
 use crate::param::Param;
 use crate::query_builder::QueryBuilder;
+use crate::query_builder::join::JoinOnArg;
 
 pub fn clone_params(e: &Expression) -> SmallVec<[crate::param::Param; 4]> {
     let mut out = SmallVec::new();
@@ -32,4 +34,12 @@ pub fn clone_params_from_expr(e: &crate::expression::Expression) -> SmallVec<[Pa
         out.push(p.clone());
     }
     out
+}
+
+#[inline]
+pub fn on<F>(f: F) -> JoinOnArg
+where
+    F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
+{
+    JoinOnArg::from(f)
 }

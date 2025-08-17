@@ -4,8 +4,10 @@ mod utils;
 
 use crate::expression::{Expression, JoinOnBuilder};
 use crate::query_builder::QueryBuilder;
+use crate::query_builder::args::IntoQBArg;
 
 pub(crate) use core_fn::{JoinKind, JoinNode};
+pub use utils::on;
 
 /// Варианты аргумента для ON
 pub enum JoinOnArg {
@@ -121,5 +123,86 @@ impl QueryBuilder {
         T: crate::query_builder::args::IntoQBArg,
     {
         self.push_join_internal(JoinKind::NaturalFull, target, JoinOnArg::None)
+    }
+
+    #[inline]
+    pub fn join_with<T, F>(self, target: T, f: F) -> Self
+    where
+        T: IntoQBArg,
+        F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
+    {
+        self.push_join_internal(JoinKind::Inner, target, JoinOnArg::from(f))
+    }
+
+    #[inline]
+    pub fn left_join_with<T, F>(self, target: T, f: F) -> Self
+    where
+        T: IntoQBArg,
+        F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
+    {
+        self.push_join_internal(JoinKind::Left, target, JoinOnArg::from(f))
+    }
+
+    #[inline]
+    pub fn right_join_with<T, F>(self, target: T, f: F) -> Self
+    where
+        T: IntoQBArg,
+        F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
+    {
+        self.push_join_internal(JoinKind::Right, target, JoinOnArg::from(f))
+    }
+
+    #[inline]
+    pub fn full_join_with<T, F>(self, target: T, f: F) -> Self
+    where
+        T: IntoQBArg,
+        F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
+    {
+        self.push_join_internal(JoinKind::Full, target, JoinOnArg::from(f))
+    }
+
+    #[inline]
+    pub fn cross_join_with<T, F>(self, target: T, f: F) -> Self
+    where
+        T: IntoQBArg,
+        F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
+    {
+        self.push_join_internal(JoinKind::Cross, target, JoinOnArg::from(f))
+    }
+
+    #[inline]
+    pub fn natural_join_with<T, F>(self, target: T, f: F) -> Self
+    where
+        T: IntoQBArg,
+        F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
+    {
+        self.push_join_internal(JoinKind::NaturalInner, target, JoinOnArg::from(f))
+    }
+
+    #[inline]
+    pub fn natural_left_join_with<T, F>(self, target: T, f: F) -> Self
+    where
+        T: IntoQBArg,
+        F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
+    {
+        self.push_join_internal(JoinKind::NaturalLeft, target, JoinOnArg::from(f))
+    }
+
+    #[inline]
+    pub fn natural_right_join_with<T, F>(self, target: T, f: F) -> Self
+    where
+        T: IntoQBArg,
+        F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
+    {
+        self.push_join_internal(JoinKind::NaturalRight, target, JoinOnArg::from(f))
+    }
+
+    #[inline]
+    pub fn natural_full_join_with<T, F>(self, target: T, f: F) -> Self
+    where
+        T: IntoQBArg,
+        F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
+    {
+        self.push_join_internal(JoinKind::NaturalFull, target, JoinOnArg::from(f))
     }
 }

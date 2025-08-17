@@ -1,6 +1,9 @@
 use super::super::*;
 use crate::{
-    expression::helpers::{col, table, val},
+    expression::{
+        JoinOnExt,
+        helpers::{col, table, val},
+    },
     query_builder::args::{QBArg, QBClosure},
 };
 

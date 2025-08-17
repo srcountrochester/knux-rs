@@ -110,4 +110,12 @@ impl QueryBuilder {
         self.push_builder_error("clear_counters(): TODO — ещё не реализовано");
         self
     }
+
+    /// Сбросить DISTINCT / DISTINCT ON
+    #[inline]
+    pub fn clear_distinct(mut self) -> Self {
+        self.select_distinct = false;
+        self.distinct_on_items.clear();
+        self
+    }
 }

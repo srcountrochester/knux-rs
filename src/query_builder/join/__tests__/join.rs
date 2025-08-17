@@ -1,5 +1,8 @@
 use super::super::*;
-use crate::expression::helpers::{col, table, val};
+use crate::expression::{
+    JoinOnExt,
+    helpers::{col, table, val},
+};
 use sqlparser::ast::{
     BinaryOperator as BO, Expr as SqlExpr, Join, JoinConstraint, JoinOperator, Query, SetExpr,
     TableFactor,

@@ -2,13 +2,14 @@ use std::borrow::Cow;
 
 use crate::{executor::DbPool, param::Param, renderer::Dialect};
 use smallvec::{SmallVec, smallvec};
-use sqlparser::ast::SelectItem;
+use sqlparser::ast::Expr;
 
 mod __tests__;
 mod alias;
 mod args;
 mod ast;
 mod clear;
+mod distinct;
 mod error;
 mod from;
 mod group_by;
@@ -23,6 +24,7 @@ mod utils;
 mod where_clause;
 
 use ast::FromItem;
+use distinct::DistinctOnNode;
 pub use error::{BuilderErrorList, Error, Result};
 use group_by::GroupByNode;
 use having::HavingNode;
@@ -30,6 +32,8 @@ use join::JoinNode;
 use order_by::OrderByNode;
 use select::SelectItemNode;
 use where_clause::WhereNode;
+
+pub use join::on;
 
 #[cfg(feature = "postgres")]
 const DEFAULT_DIALECT: Dialect = Dialect::Postgres;
@@ -56,6 +60,8 @@ pub struct QueryBuilder {
     pub(self) limit_num: Option<u64>,
     pub(self) offset_num: Option<u64>,
     pub(self) having_clause: Option<HavingNode>,
+    pub(self) select_distinct: bool,
+    pub(self) distinct_on_items: SmallVec<[DistinctOnNode; 2]>,
 }
 
 impl QueryBuilder {
@@ -77,6 +83,8 @@ impl QueryBuilder {
             dialect: DEFAULT_DIALECT,
             limit_num: None,
             offset_num: None,
+            select_distinct: false,
+            distinct_on_items: smallvec![],
         }
     }
 
@@ -99,6 +107,8 @@ impl QueryBuilder {
             dialect: DEFAULT_DIALECT,
             limit_num: None,
             offset_num: None,
+            select_distinct: false,
+            distinct_on_items: smallvec![],
         }
     }
 

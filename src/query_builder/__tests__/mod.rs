@@ -34,4 +34,7 @@ mod limit;
 #[cfg(test)]
 mod clear;
 
+#[cfg(test)]
+mod distinct;
+
 pub mod dialect_test_helpers;

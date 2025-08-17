@@ -24,3 +24,9 @@ mod path;
 
 #[cfg(test)]
 mod join_on;
+
+#[cfg(test)]
+mod join_on_ext;
+
+#[cfg(test)]
+mod on_builder;

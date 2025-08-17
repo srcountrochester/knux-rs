@@ -196,3 +196,20 @@ fn clear_router_unknown_and_unsupported() {
         "must report unsupported operator, got: {m2}"
     );
 }
+
+#[test]
+fn clear_distinct_resets_flag_and_items() {
+    let qb = QueryBuilder::new_empty()
+        .from("users")
+        .select(("*",))
+        .distinct_on((col("age"),))
+        .distinct(())
+        .clear_distinct();
+
+    assert!(!qb.select_distinct);
+    assert!(qb.distinct_on_items.is_empty());
+
+    let (sql, _p) = qb.to_sql().expect("to_sql");
+    // убедимся, что DISTINCT не попал
+    assert!(!sql.to_uppercase().contains("DISTINCT"));
+}
