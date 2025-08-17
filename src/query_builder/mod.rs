@@ -2,25 +2,34 @@ use std::borrow::Cow;
 
 use crate::{executor::DbPool, param::Param, renderer::Dialect};
 use smallvec::{SmallVec, smallvec};
-use sqlparser::ast::{Expr, Join, OrderByExpr, SelectItem};
+use sqlparser::ast::SelectItem;
 
 mod __tests__;
 mod alias;
 mod args;
 mod ast;
+mod clear;
 mod error;
 mod from;
 mod group_by;
 mod having;
 mod join;
+mod limit;
 mod order_by;
 mod schema;
 mod select;
 mod sql;
+mod utils;
 mod where_clause;
 
 use ast::FromItem;
 pub use error::{BuilderErrorList, Error, Result};
+use group_by::GroupByNode;
+use having::HavingNode;
+use join::JoinNode;
+use order_by::OrderByNode;
+use select::SelectItemNode;
+use where_clause::WhereNode;
 
 #[cfg(feature = "postgres")]
 const DEFAULT_DIALECT: Dialect = Dialect::Postgres;
@@ -32,19 +41,21 @@ const DEFAULT_DIALECT: Dialect = Dialect::SQLite;
 #[derive(Debug)]
 pub struct QueryBuilder {
     pub pool: Option<DbPool>,
-    pub select_items: SmallVec<[SelectItem; 4]>,
+    pub(self) select_items: SmallVec<[SelectItemNode; 4]>,
     pub(self) from_items: SmallVec<[FromItem; 1]>,
-    pub where_clause: Option<Expr>,
+    pub(self) where_clause: Option<WhereNode>,
     pub params: SmallVec<[Param; 8]>,
     pub default_schema: Option<String>,
     pub(crate) pending_schema: Option<String>,
     pub alias: Option<String>,
     pub(crate) dialect: Dialect,
     builder_errors: SmallVec<[Cow<'static, str>; 2]>,
-    pub(self) from_joins: SmallVec<[SmallVec<[Join; 2]>; 1]>,
-    pub(self) group_by_items: SmallVec<[Expr; 4]>,
-    pub(self) having_clause: Option<Expr>,
-    pub(self) order_by_items: SmallVec<[OrderByExpr; 4]>,
+    pub(self) from_joins: SmallVec<[SmallVec<[JoinNode; 2]>; 1]>,
+    pub(self) group_by_items: SmallVec<[GroupByNode; 4]>,
+    pub(self) order_by_items: SmallVec<[OrderByNode; 4]>,
+    pub(self) limit_num: Option<u64>,
+    pub(self) offset_num: Option<u64>,
+    pub(self) having_clause: Option<HavingNode>,
 }
 
 impl QueryBuilder {
@@ -64,6 +75,8 @@ impl QueryBuilder {
             having_clause: None,
             alias: None,
             dialect: DEFAULT_DIALECT,
+            limit_num: None,
+            offset_num: None,
         }
     }
 
@@ -84,6 +97,8 @@ impl QueryBuilder {
             having_clause: None,
             alias: None,
             dialect: DEFAULT_DIALECT,
+            limit_num: None,
+            offset_num: None,
         }
     }
 
@@ -147,6 +162,11 @@ impl QueryBuilder {
         I: IntoIterator<Item = crate::param::Param>,
     {
         self.params.extend(it);
+    }
+
+    #[inline]
+    fn is_mysql(&self) -> bool {
+        self.dialect == crate::renderer::Dialect::MySQL
     }
 }
 

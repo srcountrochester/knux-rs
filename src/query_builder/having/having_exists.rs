@@ -15,8 +15,7 @@ impl QueryBuilder {
                         subquery: Box::new(q),
                         negated: false,
                     };
-                    self.extend_params(p);
-                    self.attach_having_with_and(pred);
+                    self.attach_having_with_and(pred, p.into());
                 }
             }
             QBArg::Closure(c) => {
@@ -26,8 +25,7 @@ impl QueryBuilder {
                         subquery: Box::new(q),
                         negated: false,
                     };
-                    self.extend_params(p);
-                    self.attach_having_with_and(pred);
+                    self.attach_having_with_and(pred, p.into());
                 }
             }
             QBArg::Expr(_) => {
@@ -50,8 +48,7 @@ impl QueryBuilder {
                         subquery: Box::new(q),
                         negated: false,
                     };
-                    self.extend_params(p);
-                    self.attach_having_with_or(pred);
+                    self.attach_having_with_or(pred, p.into());
                 }
             }
             QBArg::Closure(c) => {
@@ -61,8 +58,7 @@ impl QueryBuilder {
                         subquery: Box::new(q),
                         negated: false,
                     };
-                    self.extend_params(p);
-                    self.attach_having_with_or(pred);
+                    self.attach_having_with_or(pred, p.into());
                 }
             }
             QBArg::Expr(_) => {
@@ -85,8 +81,7 @@ impl QueryBuilder {
                         subquery: Box::new(q),
                         negated: true,
                     };
-                    self.extend_params(p);
-                    self.attach_having_with_and(pred);
+                    self.attach_having_with_and(pred, p.into());
                 }
             }
             QBArg::Closure(c) => {
@@ -96,8 +91,7 @@ impl QueryBuilder {
                         subquery: Box::new(q),
                         negated: true,
                     };
-                    self.extend_params(p);
-                    self.attach_having_with_and(pred);
+                    self.attach_having_with_and(pred, p.into());
                 }
             }
             QBArg::Expr(_) => {
@@ -120,8 +114,7 @@ impl QueryBuilder {
                         subquery: Box::new(q),
                         negated: true,
                     };
-                    self.extend_params(p);
-                    self.attach_having_with_or(pred);
+                    self.attach_having_with_or(pred, p.into());
                 }
             }
             QBArg::Closure(c) => {
@@ -131,8 +124,7 @@ impl QueryBuilder {
                         subquery: Box::new(q),
                         negated: true,
                     };
-                    self.extend_params(p);
-                    self.attach_having_with_or(pred);
+                    self.attach_having_with_or(pred, p.into());
                 }
             }
             QBArg::Expr(_) => {

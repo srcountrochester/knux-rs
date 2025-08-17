@@ -17,6 +17,8 @@ use crate::query_builder::{
     args::{ArgList, QBArg},
 };
 
+pub(crate) use core_fn::WhereNode;
+
 impl QueryBuilder {
     /// WHERE <expr> [AND <expr> ...]
     ///
@@ -28,46 +30,10 @@ impl QueryBuilder {
     where
         A: ArgList,
     {
-        let items: Vec<QBArg> = args.into_vec();
-        if items.is_empty() {
-            return self;
+        if let Some((group, params)) = self.resolve_where_group(args) {
+            // слепит с уже существующим WHERE через AND и добавит параметры группы
+            self.attach_where_with_and(group, params);
         }
-
-        // Собираем итоговый Expr через AND
-        let mut combined: Option<SqlExpr> = None;
-
-        for item in items {
-            match self.resolve_qbarg_into_expr(item) {
-                Ok((expr, mut params)) => {
-                    // AND-цепочка
-                    combined = Some(match combined.take() {
-                        Some(acc) => SqlExpr::BinaryOp {
-                            left: Box::new(acc),
-                            op: BO::And,
-                            right: Box::new(expr),
-                        },
-                        None => expr,
-                    });
-                    // переносим параметры
-                    self.params.append(&mut params);
-                }
-                Err(e) => {
-                    self.push_builder_error(format!("where(): {}", e));
-                }
-            }
-        }
-
-        if let Some(new_expr) = combined {
-            self.where_clause = Some(match self.where_clause.take() {
-                Some(prev) => SqlExpr::BinaryOp {
-                    left: Box::new(prev),
-                    op: BO::And,
-                    right: Box::new(new_expr),
-                },
-                None => new_expr,
-            });
-        }
-
         self
     }
 
@@ -90,15 +56,8 @@ impl QueryBuilder {
     where
         A: ArgList,
     {
-        if let Some(group) = self.resolve_where_group(args) {
-            self.where_clause = Some(match self.where_clause.take() {
-                Some(prev) => SqlExpr::BinaryOp {
-                    left: Box::new(prev),
-                    op: BO::And,
-                    right: Box::new(group),
-                },
-                None => group,
-            });
+        if let Some((group, params)) = self.resolve_where_group(args) {
+            self.attach_where_with_and(group, params);
         }
         self
     }
@@ -108,15 +67,8 @@ impl QueryBuilder {
     where
         A: ArgList,
     {
-        if let Some(group) = self.resolve_where_group(args) {
-            self.where_clause = Some(match self.where_clause.take() {
-                Some(prev) => SqlExpr::BinaryOp {
-                    left: Box::new(prev),
-                    op: BO::Or,
-                    right: Box::new(group),
-                },
-                None => group,
-            });
+        if let Some((group, params)) = self.resolve_where_group(args) {
+            self.attach_where_with_or(group, params);
         }
         self
     }
@@ -126,12 +78,12 @@ impl QueryBuilder {
     where
         A: ArgList,
     {
-        if let Some(group) = self.resolve_where_group(args) {
+        if let Some((group, params)) = self.resolve_where_group(args) {
             let pred = SqlExpr::UnaryOp {
                 op: UnaryOperator::Not,
                 expr: Box::new(group),
             };
-            self.attach_where_with_and(pred);
+            self.attach_where_with_and(pred, params);
         }
         self
     }
@@ -147,12 +99,12 @@ impl QueryBuilder {
     where
         A: ArgList,
     {
-        if let Some(group) = self.resolve_where_group(args) {
+        if let Some((group, params)) = self.resolve_where_group(args) {
             let pred = SqlExpr::UnaryOp {
                 op: UnaryOperator::Not,
                 expr: Box::new(group),
             };
-            self.attach_where_with_or(pred);
+            self.attach_where_with_or(pred, params);
         }
         self
     }

@@ -8,10 +8,9 @@ impl QueryBuilder {
     where
         T: IntoQBArg,
     {
-        if let Ok((e, mut p)) = self.resolve_qbarg_into_expr(expr.into_qb_arg()) {
+        if let Ok((e, p)) = self.resolve_qbarg_into_expr(expr.into_qb_arg()) {
             let pred = SqlExpr::IsNull(Box::new(e));
-            self.params.append(&mut p);
-            self.attach_having_with_and(pred);
+            self.attach_having_with_and(pred, p);
         }
         self
     }
@@ -20,10 +19,9 @@ impl QueryBuilder {
     where
         T: IntoQBArg,
     {
-        if let Ok((e, mut p)) = self.resolve_qbarg_into_expr(expr.into_qb_arg()) {
+        if let Ok((e, p)) = self.resolve_qbarg_into_expr(expr.into_qb_arg()) {
             let pred = SqlExpr::IsNull(Box::new(e));
-            self.params.append(&mut p);
-            self.attach_having_with_or(pred);
+            self.attach_having_with_or(pred, p);
         }
         self
     }
@@ -32,10 +30,9 @@ impl QueryBuilder {
     where
         T: IntoQBArg,
     {
-        if let Ok((e, mut p)) = self.resolve_qbarg_into_expr(expr.into_qb_arg()) {
+        if let Ok((e, p)) = self.resolve_qbarg_into_expr(expr.into_qb_arg()) {
             let pred = SqlExpr::IsNotNull(Box::new(e));
-            self.params.append(&mut p);
-            self.attach_having_with_and(pred);
+            self.attach_having_with_and(pred, p);
         }
         self
     }
@@ -44,10 +41,9 @@ impl QueryBuilder {
     where
         T: IntoQBArg,
     {
-        if let Ok((e, mut p)) = self.resolve_qbarg_into_expr(expr.into_qb_arg()) {
+        if let Ok((e, p)) = self.resolve_qbarg_into_expr(expr.into_qb_arg()) {
             let pred = SqlExpr::IsNotNull(Box::new(e));
-            self.params.append(&mut p);
-            self.attach_having_with_or(pred);
+            self.attach_having_with_or(pred, p);
         }
         self
     }

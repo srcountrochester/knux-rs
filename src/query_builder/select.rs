@@ -1,5 +1,5 @@
 use smallvec::SmallVec;
-use sqlparser::ast::{Ident, SelectItem};
+use sqlparser::ast::{Expr as SqlExpr, SelectItem};
 
 use crate::{
     param::Param,
@@ -8,6 +8,19 @@ use crate::{
         args::{ArgList, QBArg},
     },
 };
+
+#[derive(Debug, Clone)]
+pub(crate) struct SelectItemNode {
+    pub item: SelectItem,
+    pub params: SmallVec<[Param; 8]>,
+}
+
+impl SelectItemNode {
+    #[inline]
+    pub fn new(item: SelectItem, params: SmallVec<[Param; 8]>) -> Self {
+        Self { item, params }
+    }
+}
 
 impl QueryBuilder {
     pub fn select<L>(mut self, items: L) -> Self
@@ -19,22 +32,42 @@ impl QueryBuilder {
 
         for arg in args {
             match arg {
+                // ===== Expression =====
                 QBArg::Expr(e) => {
-                    let (item, mut p) = Self::expr_to_select_item(e);
-                    self.select_items.push(item);
-                    if !p.is_empty() {
-                        self.params.append(&mut p);
-                    }
+                    let (alias_opt, expr, params) = e.into_projection_parts();
+
+                    let item = if let Some(alias) = alias_opt {
+                        // expr AS alias
+                        SelectItem::ExprWithAlias { expr, alias }
+                    } else if matches!(&expr, SqlExpr::Identifier(id) if id.value == "*") {
+                        // `*`
+                        SelectItem::Wildcard(Default::default())
+                    } else {
+                        // просто выражение
+                        SelectItem::UnnamedExpr(expr)
+                    };
+
+                    self.select_items.push(SelectItemNode::new(item, params));
                 }
-                other => {
-                    if let Ok((expr_ast, params)) =
-                        other.resolve_into_expr_with(|qb| qb.build_query_ast())
-                    {
-                        self.select_items.push(SelectItem::UnnamedExpr(expr_ast));
-                        if !params.is_empty() {
-                            self.params.reserve(params.len());
-                            self.params.extend(params);
+
+                // ===== Subquery =====
+                QBArg::Subquery(qb) => match qb.build_query_ast() {
+                    Ok((q, p)) => {
+                        let item = SelectItem::UnnamedExpr(SqlExpr::Subquery(Box::new(q)));
+                        self.select_items.push(SelectItemNode::new(item, p.into()));
+                    }
+                    Err(e) => self.push_builder_error(format!("select(): {e}")),
+                },
+
+                // ===== Closure → Subquery =====
+                QBArg::Closure(c) => {
+                    let built = c.apply(QueryBuilder::new_empty());
+                    match built.build_query_ast() {
+                        Ok((q, p)) => {
+                            let item = SelectItem::UnnamedExpr(SqlExpr::Subquery(Box::new(q)));
+                            self.select_items.push(SelectItemNode::new(item, p.into()));
                         }
+                        Err(e) => self.push_builder_error(format!("select(): {e}")),
                     }
                 }
             }
@@ -50,25 +83,5 @@ impl QueryBuilder {
         let v = std::mem::take(&mut *self); // или дублируй логику без take
         *self = v.select(items);
         self
-    }
-
-    /// Очищает список select-полей, не трогая остальное
-    pub fn clear_select(&mut self) -> &mut Self {
-        self.select_items.clear();
-        self
-    }
-
-    fn expr_to_select_item(
-        expr: crate::expression::Expression,
-    ) -> (SelectItem, SmallVec<[Param; 8]>) {
-        let params = expr.params;
-        let item = match expr.alias {
-            Some(a) => SelectItem::ExprWithAlias {
-                expr: expr.expr,
-                alias: Ident::new(a.into_owned()),
-            },
-            None => SelectItem::UnnamedExpr(expr.expr),
-        };
-        (item, params)
     }
 }

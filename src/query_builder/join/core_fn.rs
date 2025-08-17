@@ -35,6 +35,19 @@ pub enum JoinKind {
     NaturalFull,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct JoinNode {
+    pub join: Join,
+    pub params: SmallVec<[Param; 8]>,
+}
+
+impl JoinNode {
+    #[inline]
+    pub fn new(join: Join, params: SmallVec<[Param; 8]>) -> Self {
+        Self { join, params }
+    }
+}
+
 impl QueryBuilder {
     pub(super) fn push_join_internal<T, O>(mut self, kind: JoinKind, target: T, on: O) -> Self
     where
@@ -136,11 +149,12 @@ impl QueryBuilder {
             global: false,
             join_operator,
         };
-        self.from_joins[last_idx].push(join);
 
-        // 5) Параметры
-        self.params.append(&mut collect_params);
-        self.params.append(&mut on_params);
+        let mut node_params: SmallVec<[Param; 8]> = SmallVec::new();
+        node_params.append(&mut collect_params);
+        node_params.append(&mut on_params);
+
+        self.from_joins[last_idx].push(JoinNode::new(join, node_params));
 
         self
     }

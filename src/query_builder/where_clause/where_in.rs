@@ -9,8 +9,8 @@ impl QueryBuilder {
         C: IntoQBArg,
         A: ArgList,
     {
-        if let Some(pred) = self.build_in_predicate(column.into_qb_arg(), values, false) {
-            self.attach_where_with_and(pred);
+        if let Some((pred, params)) = self.build_in_predicate(column.into_qb_arg(), values, false) {
+            self.attach_where_with_and(pred, params);
         }
         self
     }
@@ -20,8 +20,8 @@ impl QueryBuilder {
         C: IntoQBArg,
         A: ArgList,
     {
-        if let Some(pred) = self.build_in_predicate(column.into_qb_arg(), values, false) {
-            self.attach_where_with_or(pred);
+        if let Some((pred, params)) = self.build_in_predicate(column.into_qb_arg(), values, false) {
+            self.attach_where_with_or(pred, params);
         }
         self
     }
@@ -31,8 +31,8 @@ impl QueryBuilder {
         C: IntoQBArg,
         A: ArgList,
     {
-        if let Some(pred) = self.build_in_predicate(column.into_qb_arg(), values, true) {
-            self.attach_where_with_and(pred);
+        if let Some((pred, params)) = self.build_in_predicate(column.into_qb_arg(), values, true) {
+            self.attach_where_with_and(pred, params);
         }
         self
     }
@@ -42,8 +42,8 @@ impl QueryBuilder {
         C: IntoQBArg,
         A: ArgList,
     {
-        if let Some(pred) = self.build_in_predicate(column.into_qb_arg(), values, true) {
-            self.attach_where_with_or(pred);
+        if let Some((pred, params)) = self.build_in_predicate(column.into_qb_arg(), values, true) {
+            self.attach_where_with_or(pred, params);
         }
         self
     }

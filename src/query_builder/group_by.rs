@@ -1,8 +1,22 @@
 use smallvec::SmallVec;
+use sqlparser::ast::Expr as SqlExpr;
 
 use crate::param::Param;
 use crate::query_builder::QueryBuilder;
 use crate::query_builder::args::{ArgList, QBArg};
+
+#[derive(Debug, Clone)]
+pub(crate) struct GroupByNode {
+    pub expr: SqlExpr,
+    pub params: SmallVec<[Param; 8]>,
+}
+
+impl GroupByNode {
+    #[inline]
+    pub fn new(expr: SqlExpr, params: SmallVec<[Param; 8]>) -> Self {
+        Self { expr, params }
+    }
+}
 
 impl QueryBuilder {
     /// Добавляет выражения в GROUP BY.
@@ -23,10 +37,14 @@ impl QueryBuilder {
         for it in items {
             match it {
                 QBArg::Expr(e) => {
-                    let sql_expr = e.expr;
+                    let expr: SqlExpr = e.expr;
                     let mut params: SmallVec<[Param; 8]> = e.params;
-                    self.group_by_items.push(sql_expr);
-                    self.params.append(&mut params);
+
+                    self.group_by_items.push(GroupByNode::new(expr, {
+                        let mut buf: SmallVec<[Param; 8]> = SmallVec::new();
+                        buf.append(&mut params);
+                        buf
+                    }));
                 }
                 QBArg::Subquery(_) | QBArg::Closure(_) => {
                     self.push_builder_error(

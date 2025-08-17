@@ -16,15 +16,13 @@ fn attach_having_with_and_accumulates() {
 
     // expr1: sum > 10
     let e1 = col("sum").gt(val(10));
-    let mut p1 = e1.params; // вручную переносим параметры
-    qb.params.append(&mut p1);
-    qb.attach_having_with_and(e1.expr);
+    let p1 = e1.params; // вручную переносим параметры
+    qb.attach_having_with_and(e1.expr, p1);
 
     // expr2: sum < 100
     let e2 = col("sum").lt(val(100));
-    let mut p2 = e2.params;
-    qb.params.append(&mut p2);
-    qb.attach_having_with_and(e2.expr);
+    let p2 = e2.params;
+    qb.attach_having_with_and(e2.expr, p2);
 
     let (q, params) = qb.build_query_ast().expect("ok");
     assert_eq!(
@@ -56,15 +54,13 @@ fn attach_having_with_or_builds_or_tree() {
 
     // cnt > 1
     let e1 = col("cnt").gt(val(1));
-    let mut p1 = e1.params;
-    qb.params.append(&mut p1);
-    qb.attach_having_with_and(e1.expr);
+    let p1 = e1.params;
+    qb.attach_having_with_and(e1.expr, p1);
 
     // cnt < 10 (через OR)
     let e2 = col("cnt").lt(val(10));
-    let mut p2 = e2.params;
-    qb.params.append(&mut p2);
-    qb.attach_having_with_or(e2.expr);
+    let p2 = e2.params;
+    qb.attach_having_with_or(e2.expr, p2);
 
     let (q, params) = qb.build_query_ast().expect("ok");
     assert_eq!(params.len(), 2, "ожидается 2 параметра (1 и 10)");
@@ -84,11 +80,11 @@ fn resolve_having_group_and_attach_collects_params_and_chains_with_and() {
     let mut qb = QueryBuilder::new_empty().from("t").select(("x",));
 
     // группа из двух выражений -> внутри AND
-    let pred = qb
+    let (pred, params) = qb
         .resolve_having_group((col("sum").gt(val(10)), col("sum").lt(val(100))))
         .expect("group must produce predicate");
 
-    qb.attach_having_with_and(pred);
+    qb.attach_having_with_and(pred, params);
 
     let (q, params) = qb.build_query_ast().expect("ok");
     assert_eq!(params.len(), 2, "оба val(..) должны попасть в параметры");

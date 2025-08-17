@@ -1,9 +1,14 @@
-use crate::{param::Param, query_builder::args::QBClosure};
+use std::mem;
+
+use crate::{
+    param::Param,
+    query_builder::{args::QBClosure, utils::num_expr},
+};
 use smallvec::SmallVec;
 use sqlparser::ast::{
-    GroupByExpr, Ident, Join, ObjectName, OrderBy, OrderByExpr, OrderByKind, Query, Select,
-    SelectFlavor, SelectItem, SetExpr, TableAlias, TableFactor, TableWithJoins,
-    helpers::attached_token::AttachedToken,
+    Expr as SqlExpr, GroupByExpr, Ident, Join, LimitClause, ObjectName, Offset, OffsetRows,
+    OrderBy, OrderByExpr, OrderByKind, Query, Select, SelectFlavor, SelectItem, SetExpr,
+    TableAlias, TableFactor, TableWithJoins, helpers::attached_token::AttachedToken,
 };
 
 use super::{BuilderErrorList, Error, QueryBuilder, Result};
@@ -21,25 +26,191 @@ impl QueryBuilder {
             return Err(Error::BuilderErrors(list));
         }
 
+        let limit_clause = self.build_limit_clause();
+        let params_sv = mem::take(&mut self.params);
+        let from_items = mem::take(&mut self.from_items);
+        let (from, mut params) = self.form_from_items(params_sv, from_items)?;
+
         // проекция по умолчанию: SELECT *
-        let projection = if self.select_items.is_empty() {
+        let projection: SmallVec<[SelectItem; 4]> = if self.select_items.is_empty() {
             let mut sv = SmallVec::new();
             sv.push(SelectItem::Wildcard(Default::default()));
             sv
         } else {
-            self.select_items
+            self.select_items.iter().map(|n| n.item.clone()).collect()
         };
 
-        let mut params = self.params.into_vec();
-        // FROM: либо один TableWithJoins, либо пусто
-        let mut from: Vec<TableWithJoins> = Vec::with_capacity(self.from_items.len());
+        let selection = self.where_clause.as_ref().map(|n| n.expr.clone());
+        let having = self.having_clause.as_ref().map(|n| n.expr.clone());
 
-        for (i, item) in self.from_items.into_iter().enumerate() {
-            // достаём joins для этого FROM (или пустой вектор)
+        let (group_by_exprs, group_params): (Vec<SqlExpr>, Vec<Param>) = {
+            let mut exprs = Vec::with_capacity(self.group_by_items.len());
+            let mut gparams: Vec<Param> = Vec::new();
+            for node in self.group_by_items.drain(..) {
+                exprs.push(node.expr);
+                gparams.extend(node.params.into_vec());
+            }
+            (exprs, gparams)
+        };
+
+        let select = Select {
+            distinct: None,
+            top: None,
+            projection: projection.into_vec(),
+            into: None,
+            from,
+            lateral_views: vec![],
+            selection,
+            group_by: GroupByExpr::Expressions(group_by_exprs, vec![]),
+            cluster_by: vec![],
+            distribute_by: vec![],
+            sort_by: vec![],
+            having,
+            named_window: vec![],
+            qualify: None,
+            connect_by: None,
+            exclude: None,
+            prewhere: None,
+            value_table_mode: None,
+            top_before_distinct: false,
+            window_before_qualify: false,
+            flavor: SelectFlavor::Standard,
+            select_token: AttachedToken::empty(),
+        };
+
+        let order_by_opt = if self.order_by_items.is_empty() {
+            None
+        } else {
+            let exprs: Vec<OrderByExpr> =
+                self.order_by_items.iter().map(|n| n.expr.clone()).collect();
+            Some(OrderBy {
+                kind: OrderByKind::Expressions(exprs),
+                interpolate: None,
+            })
+        };
+
+        let query = Query {
+            with: None,
+            body: Box::new(SetExpr::Select(Box::new(select))),
+            order_by: order_by_opt,
+            fetch: None,
+            locks: vec![],
+            for_clause: None,
+            format_clause: None,
+            limit_clause,
+            pipe_operators: vec![],
+            settings: None,
+        };
+
+        if !self.builder_errors.is_empty() {
+            return Err(Error::BuilderErrors(BuilderErrorList::from(
+                std::mem::take(&mut self.builder_errors),
+            )));
+        }
+
+        if let Some(node) = self.where_clause.take() {
+            params.extend(node.params.into_vec());
+        }
+
+        if let Some(node) = self.having_clause.take() {
+            params.extend(node.params.into_vec());
+        }
+
+        for node in self.order_by_items.drain(..) {
+            params.extend(node.params.into_vec());
+        }
+
+        for node in self.select_items.drain(..) {
+            if !node.params.is_empty() {
+                params.extend(node.params.into_vec());
+            }
+        }
+
+        params.extend(group_params);
+
+        Ok((query, params))
+    }
+
+    /// Собрать LimitClause с учётом диалекта.
+    /// - PG/SQLite: `LIMIT n [OFFSET m]`, допускается `OFFSET m` без LIMIT
+    /// - MySQL:
+    ///   - `LIMIT n`
+    ///   - `LIMIT off, lim` при наличии обоих
+    ///   - только `OFFSET m` эмулируется как `LIMIT m, 18446744073709551615`
+    #[inline]
+    fn build_limit_clause(&self) -> Option<LimitClause> {
+        let lim = self.limit_num;
+        let off = self.offset_num;
+
+        match (lim, off) {
+            (None, None) => None,
+
+            // ----- MySQL-ветка -----
+            _ if self.is_mysql() => match (lim, off) {
+                (Some(l), Some(o)) => Some(LimitClause::OffsetCommaLimit {
+                    offset: num_expr(o),
+                    limit: num_expr(l),
+                }),
+                (Some(l), None) => Some(LimitClause::LimitOffset {
+                    limit: Some(num_expr(l)),
+                    offset: None,
+                    limit_by: vec![],
+                }),
+                (None, Some(o)) => {
+                    // MySQL не поддерживает "OFFSET m" без LIMIT.
+                    // Эмулируем "безлимитный" оффсет через огромный лимит.
+                    Some(LimitClause::OffsetCommaLimit {
+                        offset: num_expr(o),
+                        limit: num_expr(u64::MAX),
+                    })
+                }
+                (None, None) => None, // уже покрыто, для полноты match'а
+            },
+
+            // ----- Стандартная ветка (PG/SQLite и др.) -----
+            (Some(l), None) => Some(LimitClause::LimitOffset {
+                limit: Some(num_expr(l)),
+                offset: None,
+                limit_by: vec![],
+            }),
+            (None, Some(o)) => Some(LimitClause::LimitOffset {
+                limit: None,
+                offset: Some(Offset {
+                    value: num_expr(o),
+                    rows: OffsetRows::None,
+                }),
+                limit_by: vec![],
+            }),
+            (Some(l), Some(o)) => Some(LimitClause::LimitOffset {
+                limit: Some(num_expr(l)),
+                offset: Some(Offset {
+                    value: num_expr(o),
+                    rows: OffsetRows::None,
+                }),
+                limit_by: vec![],
+            }),
+        }
+    }
+
+    fn form_from_items(
+        &mut self,
+        params: SmallVec<[Param; 8]>,
+        from_items: SmallVec<[FromItem; 1]>,
+    ) -> Result<(Vec<TableWithJoins>, Vec<Param>)> {
+        let mut params = params.into_vec();
+        let mut from: Vec<TableWithJoins> = Vec::with_capacity(from_items.len());
+
+        for (i, item) in from_items.into_iter().enumerate() {
             let joins_vec: Vec<Join> = if i < self.from_joins.len() {
-                // забираем владение: превращаем SmallVec в Vec
-                let sv = std::mem::take(&mut self.from_joins[i]);
-                sv.into_vec()
+                let nodes_sv = std::mem::take(&mut self.from_joins[i]);
+                let mut jv: Vec<Join> = Vec::with_capacity(nodes_sv.len());
+                for node in nodes_sv {
+                    jv.push(node.join);
+                    if !node.params.is_empty() {
+                        params.extend(node.params.into_vec());
+                    }
+                }
+                jv
             } else {
                 Vec::new()
             };
@@ -76,7 +247,7 @@ impl QueryBuilder {
                                 columns: vec![],
                             }),
                         },
-                    })
+                    });
                 }
                 FromItem::SubqueryClosure(closure) => {
                     let built = closure.apply(QueryBuilder::new_empty());
@@ -95,67 +266,11 @@ impl QueryBuilder {
                                 columns: vec![],
                             }),
                         },
-                    })
+                    });
                 }
             }
         }
 
-        let selection = self.where_clause;
-
-        let select = Select {
-            distinct: None,
-            top: None,
-            projection: projection.into_vec(),
-            into: None,
-            from,
-            lateral_views: vec![],
-            selection,
-            group_by: GroupByExpr::Expressions(self.group_by_items.into_vec(), vec![]),
-            cluster_by: vec![],
-            distribute_by: vec![],
-            sort_by: vec![],
-            having: self.having_clause,
-            named_window: vec![],
-            qualify: None,
-            connect_by: None,
-            exclude: None,
-            prewhere: None,
-            value_table_mode: None,
-            top_before_distinct: false,
-            window_before_qualify: false,
-            flavor: SelectFlavor::Standard,
-            select_token: AttachedToken::empty(),
-        };
-
-        let order_by_opt = if self.order_by_items.is_empty() {
-            None
-        } else {
-            // в новых версиях sqlparser OrderBy хранит kind + interpolate
-            Some(OrderBy {
-                kind: OrderByKind::Expressions(self.order_by_items.into_vec()),
-                interpolate: None,
-            })
-        };
-
-        let query = Query {
-            with: None,
-            body: Box::new(SetExpr::Select(Box::new(select))),
-            order_by: order_by_opt,
-            fetch: None,
-            locks: vec![],
-            for_clause: None,
-            format_clause: None,
-            limit_clause: None,
-            pipe_operators: vec![],
-            settings: None,
-        };
-
-        if !self.builder_errors.is_empty() {
-            return Err(Error::BuilderErrors(BuilderErrorList::from(
-                std::mem::take(&mut self.builder_errors),
-            )));
-        }
-
-        Ok((query, params))
+        Ok((from, params))
     }
 }

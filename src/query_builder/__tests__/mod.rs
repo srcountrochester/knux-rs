@@ -28,4 +28,10 @@ mod group_by;
 #[cfg(test)]
 mod order_by;
 
+#[cfg(test)]
+mod limit;
+
+#[cfg(test)]
+mod clear;
+
 pub mod dialect_test_helpers;

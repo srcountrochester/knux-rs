@@ -1,3 +1,5 @@
+use smallvec::smallvec;
+
 use crate::{
     query_builder::{
         QueryBuilder,
@@ -22,7 +24,7 @@ impl QueryBuilder {
             _ => format!("JSON_CONTAINS({}, {})", col, quote_sql_str(json)),
         };
         match parse_where_expr(&sql) {
-            Ok(expr) => self.attach_where_with_and(expr),
+            Ok(expr) => self.attach_where_with_and(expr, smallvec![]),
             Err(e) => self.push_builder_error(format!("where_json_object(): {}", e)),
         }
         self
@@ -57,7 +59,7 @@ impl QueryBuilder {
             ),
         };
         match parse_where_expr(&sql) {
-            Ok(expr) => self.attach_where_with_and(expr),
+            Ok(expr) => self.attach_where_with_and(expr, smallvec![]),
             Err(e) => self.push_builder_error(format!("where_json_path(): {}", e)),
         }
         self
@@ -76,7 +78,7 @@ impl QueryBuilder {
             _ => format!("JSON_CONTAINS({}, {})", left, quote_sql_str(right_json)),
         };
         match parse_where_expr(&sql) {
-            Ok(expr) => self.attach_where_with_and(expr),
+            Ok(expr) => self.attach_where_with_and(expr, smallvec![]),
             Err(e) => self.push_builder_error(format!("where_json_superset_of(): {}", e)),
         }
         self
@@ -92,7 +94,7 @@ impl QueryBuilder {
             _ => format!("JSON_CONTAINS({}, {})", right, quote_sql_str(left_json)),
         };
         match parse_where_expr(&sql) {
-            Ok(expr) => self.attach_where_with_and(expr),
+            Ok(expr) => self.attach_where_with_and(expr, smallvec![]),
             Err(e) => self.push_builder_error(format!("where_json_subset_of(): {}", e)),
         }
         self

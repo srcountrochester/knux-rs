@@ -5,6 +5,19 @@ use crate::param::Param;
 use crate::query_builder::QueryBuilder;
 use crate::query_builder::args::{ArgList, QBArg};
 
+#[derive(Debug, Clone)]
+pub(crate) struct OrderByNode {
+    pub expr: OrderByExpr,
+    pub params: SmallVec<[Param; 8]>,
+}
+
+impl OrderByNode {
+    #[inline]
+    pub fn new(expr: OrderByExpr, params: SmallVec<[Param; 8]>) -> Self {
+        Self { expr, params }
+    }
+}
+
 impl QueryBuilder {
     /// ORDER BY <expr1>, <expr2>, ...
     ///
@@ -26,15 +39,22 @@ impl QueryBuilder {
                 QBArg::Expr(e) => {
                     let expr: SqlExpr = e.expr;
                     let mut params: SmallVec<[Param; 8]> = e.params;
-                    self.order_by_items.push(OrderByExpr {
+
+                    let ob = OrderByExpr {
                         expr,
                         options: OrderByOptions {
                             asc: None,
                             nulls_first: None,
                         },
                         with_fill: None,
-                    });
-                    self.params.append(&mut params);
+                    };
+
+                    // кладём (expr + его параметры) как единую ноду ORDER BY
+                    self.order_by_items.push(OrderByNode::new(ob, {
+                        let mut buf: SmallVec<[Param; 8]> = SmallVec::new();
+                        buf.append(&mut params);
+                        buf
+                    }));
                 }
                 QBArg::Subquery(_) | QBArg::Closure(_) => {
                     self.push_builder_error(

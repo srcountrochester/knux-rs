@@ -1,3 +1,4 @@
+use smallvec::SmallVec;
 use sqlparser::ast::Expr as SqlExpr;
 
 use crate::query_builder::QueryBuilder;
@@ -21,10 +22,11 @@ impl QueryBuilder {
                 high: Box::new(h),
                 negated: false,
             };
-            self.params.append(&mut pt);
-            self.params.append(&mut pl);
-            self.params.append(&mut ph);
-            self.attach_having_with_and(pred);
+            let mut buf = SmallVec::new();
+            buf.append(&mut pt);
+            buf.append(&mut pl);
+            buf.append(&mut ph);
+            self.attach_having_with_and(pred, buf);
         }
         self
     }
@@ -46,10 +48,11 @@ impl QueryBuilder {
                 high: Box::new(h),
                 negated: false,
             };
-            self.params.append(&mut pt);
-            self.params.append(&mut pl);
-            self.params.append(&mut ph);
-            self.attach_having_with_or(pred);
+            let mut buf = SmallVec::new();
+            buf.append(&mut pt);
+            buf.append(&mut pl);
+            buf.append(&mut ph);
+            self.attach_having_with_or(pred, buf);
         }
         self
     }
@@ -71,10 +74,11 @@ impl QueryBuilder {
                 high: Box::new(h),
                 negated: true,
             };
-            self.params.append(&mut pt);
-            self.params.append(&mut pl);
-            self.params.append(&mut ph);
-            self.attach_having_with_and(pred);
+            let mut buf = SmallVec::new();
+            buf.append(&mut pt);
+            buf.append(&mut pl);
+            buf.append(&mut ph);
+            self.attach_having_with_and(pred, buf);
         }
         self
     }
@@ -96,10 +100,11 @@ impl QueryBuilder {
                 high: Box::new(h),
                 negated: true,
             };
-            self.params.append(&mut pt);
-            self.params.append(&mut pl);
-            self.params.append(&mut ph);
-            self.attach_having_with_or(pred);
+            let mut buf = SmallVec::new();
+            buf.append(&mut pt);
+            buf.append(&mut pl);
+            buf.append(&mut ph);
+            self.attach_having_with_or(pred, buf);
         }
         self
     }

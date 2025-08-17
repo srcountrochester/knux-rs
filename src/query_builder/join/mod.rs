@@ -4,7 +4,8 @@ mod utils;
 
 use crate::expression::{Expression, JoinOnBuilder};
 use crate::query_builder::QueryBuilder;
-use crate::query_builder::join::core_fn::JoinKind;
+
+pub(crate) use core_fn::{JoinKind, JoinNode};
 
 /// Варианты аргумента для ON
 pub enum JoinOnArg {
