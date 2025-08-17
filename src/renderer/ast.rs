@@ -190,7 +190,9 @@ pub enum SetOp {
     Union,
     UnionAll,
     Intersect,
+    IntersectAll,
     Except,
+    ExceptAll,
 }
 
 #[derive(Debug, Clone, PartialEq)]

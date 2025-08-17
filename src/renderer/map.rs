@@ -89,19 +89,34 @@ fn map_query_body(se: &SetExpr) -> R::QueryBody {
                 (R::SetOp::Union, SetQuantifier::None) => (R::SetOp::Union, false), // default=Distinct
 
                 // INTERSECT/EXCEPT/MINUS — BY NAME тоже встречается в отдельных диалектах
-                (o @ R::SetOp::Intersect, SetQuantifier::All) => (o, false),
-                (o @ R::SetOp::Intersect, SetQuantifier::Distinct) => (o, false),
+                (R::SetOp::Intersect, SetQuantifier::All) => (R::SetOp::IntersectAll, false),
+                (R::SetOp::Intersect, SetQuantifier::Distinct) => (R::SetOp::Intersect, false),
+                (R::SetOp::Intersect, SetQuantifier::AllByName) => (R::SetOp::IntersectAll, true),
+                (R::SetOp::Intersect, SetQuantifier::DistinctByName) => (R::SetOp::Intersect, true),
+                (R::SetOp::Except, SetQuantifier::All) => (R::SetOp::ExceptAll, false),
+                (R::SetOp::Except, SetQuantifier::Distinct) => (R::SetOp::Except, false),
+                (R::SetOp::Except, SetQuantifier::AllByName) => (R::SetOp::ExceptAll, true),
+                (R::SetOp::Except, SetQuantifier::DistinctByName) => (R::SetOp::Except, true),
+
                 (o @ R::SetOp::Intersect, SetQuantifier::ByName) => (o, true),
-                (o @ R::SetOp::Intersect, SetQuantifier::AllByName) => (o, true),
-                (o @ R::SetOp::Intersect, SetQuantifier::DistinctByName) => (o, true),
                 (o @ R::SetOp::Intersect, SetQuantifier::None) => (o, false),
 
-                (o @ R::SetOp::Except, SetQuantifier::All) => (o, false),
-                (o @ R::SetOp::Except, SetQuantifier::Distinct) => (o, false),
+                (o @ R::SetOp::IntersectAll, SetQuantifier::All) => (o, false),
+                (o @ R::SetOp::IntersectAll, SetQuantifier::Distinct) => (o, false),
+                (o @ R::SetOp::IntersectAll, SetQuantifier::ByName) => (o, true),
+                (o @ R::SetOp::IntersectAll, SetQuantifier::AllByName) => (o, true),
+                (o @ R::SetOp::IntersectAll, SetQuantifier::DistinctByName) => (o, true),
+                (o @ R::SetOp::IntersectAll, SetQuantifier::None) => (o, false),
+
                 (o @ R::SetOp::Except, SetQuantifier::ByName) => (o, true),
-                (o @ R::SetOp::Except, SetQuantifier::AllByName) => (o, true),
-                (o @ R::SetOp::Except, SetQuantifier::DistinctByName) => (o, true),
                 (o @ R::SetOp::Except, SetQuantifier::None) => (o, false),
+
+                (o @ R::SetOp::ExceptAll, SetQuantifier::All) => (o, false),
+                (o @ R::SetOp::ExceptAll, SetQuantifier::Distinct) => (o, false),
+                (o @ R::SetOp::ExceptAll, SetQuantifier::ByName) => (o, true),
+                (o @ R::SetOp::ExceptAll, SetQuantifier::AllByName) => (o, true),
+                (o @ R::SetOp::ExceptAll, SetQuantifier::DistinctByName) => (o, true),
+                (o @ R::SetOp::ExceptAll, SetQuantifier::None) => (o, false),
 
                 // UNION ALL уже нормализован выше
                 (o @ R::SetOp::UnionAll, _) => {

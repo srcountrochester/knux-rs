@@ -40,4 +40,10 @@ mod distinct;
 #[cfg(test)]
 mod with;
 
+#[cfg(test)]
+mod union;
+
+#[cfg(test)]
+mod intersect_except;
+
 pub mod dialect_test_helpers;

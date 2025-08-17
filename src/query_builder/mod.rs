@@ -20,6 +20,7 @@ mod order_by;
 mod schema;
 mod select;
 mod sql;
+mod union;
 mod utils;
 mod where_clause;
 mod with;
@@ -32,6 +33,7 @@ use having::HavingNode;
 use join::JoinNode;
 use order_by::OrderByNode;
 use select::SelectItemNode;
+use union::SetOpNode;
 use where_clause::WhereNode;
 use with::WithItemNode;
 
@@ -66,6 +68,7 @@ pub struct QueryBuilder {
     pub(self) distinct_on_items: SmallVec<[DistinctOnNode; 2]>,
     pub(self) with_items: SmallVec<[WithItemNode; 1]>,
     pub(self) with_recursive: bool,
+    pub(self) set_ops: SmallVec<[SetOpNode; 1]>,
 }
 
 impl QueryBuilder {
@@ -91,6 +94,7 @@ impl QueryBuilder {
             distinct_on_items: smallvec![],
             with_items: smallvec![],
             with_recursive: false,
+            set_ops: smallvec![],
         }
     }
 
@@ -117,6 +121,7 @@ impl QueryBuilder {
             distinct_on_items: smallvec![],
             with_items: smallvec![],
             with_recursive: false,
+            set_ops: smallvec![],
         }
     }
 

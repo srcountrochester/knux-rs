@@ -8,7 +8,8 @@ use smallvec::SmallVec;
 use sqlparser::ast::{
     Cte, Distinct, Expr as SqlExpr, GroupByExpr, Ident, Join, LimitClause, ObjectName, Offset,
     OffsetRows, OrderBy, OrderByExpr, OrderByKind, Query, Select, SelectFlavor, SelectItem,
-    SetExpr, TableAlias, TableFactor, TableWithJoins, With, helpers::attached_token::AttachedToken,
+    SetExpr, SetOperator, SetQuantifier, TableAlias, TableFactor, TableWithJoins, With,
+    helpers::attached_token::AttachedToken,
 };
 
 use super::{BuilderErrorList, Error, QueryBuilder, Result};
@@ -105,9 +106,27 @@ impl QueryBuilder {
             })
         };
 
+        let mut body = SetExpr::Select(Box::new(select));
+
+        // Последовательно навешиваем UNION / UNION ALL справа налево, аккумулируя параметры
+        if !self.set_ops.is_empty() {
+            for node in self.set_ops.into_vec() {
+                // порядок параметров: сначала то, что уже накоплено, затем RHS текущего set-op
+                if !node.params.is_empty() {
+                    params.extend(node.params.into_vec());
+                }
+                body = SetExpr::SetOperation {
+                    op: node.op,
+                    set_quantifier: node.quantifier,
+                    left: Box::new(body),
+                    right: Box::new(SetExpr::Query(Box::new(node.right))),
+                };
+            }
+        }
+
         let query = Query {
             with,
-            body: Box::new(SetExpr::Select(Box::new(select))),
+            body: Box::new(body),
             order_by: order_by_opt,
             fetch: None,
             locks: vec![],

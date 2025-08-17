@@ -141,7 +141,9 @@ fn render_query_body(w: &mut SqlWriter, body: &R::QueryBody, cfg: &SqlRenderCfg)
                 R::SetOp::Union => w.push("UNION "),
                 R::SetOp::UnionAll => w.push("UNION ALL "),
                 R::SetOp::Intersect => w.push("INTERSECT "),
+                R::SetOp::IntersectAll => w.push("INTERSECT ALL "),
                 R::SetOp::Except => w.push("EXCEPT "),
+                R::SetOp::ExceptAll => w.push("EXCEPT ALL "),
             }
             w.push("(");
             render_query_body(w, right, cfg);
