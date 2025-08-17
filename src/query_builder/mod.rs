@@ -22,6 +22,7 @@ mod select;
 mod sql;
 mod utils;
 mod where_clause;
+mod with;
 
 use ast::FromItem;
 use distinct::DistinctOnNode;
@@ -32,6 +33,7 @@ use join::JoinNode;
 use order_by::OrderByNode;
 use select::SelectItemNode;
 use where_clause::WhereNode;
+use with::WithItemNode;
 
 pub use join::on;
 
@@ -62,6 +64,8 @@ pub struct QueryBuilder {
     pub(self) having_clause: Option<HavingNode>,
     pub(self) select_distinct: bool,
     pub(self) distinct_on_items: SmallVec<[DistinctOnNode; 2]>,
+    pub(self) with_items: SmallVec<[WithItemNode; 1]>,
+    pub(self) with_recursive: bool,
 }
 
 impl QueryBuilder {
@@ -85,6 +89,8 @@ impl QueryBuilder {
             offset_num: None,
             select_distinct: false,
             distinct_on_items: smallvec![],
+            with_items: smallvec![],
+            with_recursive: false,
         }
     }
 
@@ -109,6 +115,8 @@ impl QueryBuilder {
             offset_num: None,
             select_distinct: false,
             distinct_on_items: smallvec![],
+            with_items: smallvec![],
+            with_recursive: false,
         }
     }
 
@@ -152,6 +160,12 @@ impl QueryBuilder {
     #[inline]
     pub fn has_builder_errors(&self) -> bool {
         !self.builder_errors.is_empty()
+    }
+
+    #[inline]
+    pub fn dialect(mut self, dialect: Dialect) -> Self {
+        self.dialect = dialect;
+        self
     }
 
     #[inline]

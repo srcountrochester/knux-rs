@@ -6,6 +6,12 @@ pub enum GroupByModifier {
     GroupingSets(Expr),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CteMaterialized {
+    Materialized,
+    NotMaterialized,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Select {
     pub distinct: bool,
@@ -208,6 +214,8 @@ pub struct With {
 pub struct Cte {
     pub name: String,
     pub columns: Vec<String>,
+    pub from: Option<String>,
+    pub materialized: Option<CteMaterialized>,
     pub query: Box<QueryBody>,
 }
 

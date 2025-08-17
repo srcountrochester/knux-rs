@@ -1,13 +1,13 @@
 use crate::renderer::ast as R;
 
 use sqlparser::ast::{
-    BinaryOperator as SBinOp, CaseWhen, Cte as SCte, DataType, Distinct, Expr as SExpr, Function,
-    FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, GroupByWithModifier, Ident,
-    Join as SJoin, JoinConstraint, JoinOperator as SJoinKind, LimitClause, ObjectName, OrderBy,
-    OrderByExpr, OrderByKind, Query as SQuery, Select as SSelect, SelectItem as SSelectItem,
-    SetExpr, SetOperator, SetQuantifier, TableFactor, UnaryOperator as SUnOp, Value, ValueWithSpan,
-    WildcardAdditionalOptions, WindowFrame as SWindowFrame, WindowSpec as SWindowSpec, WindowType,
-    With as SWith,
+    BinaryOperator as SBinOp, CaseWhen, Cte as SCte, CteAsMaterialized as SCteMat, Distinct,
+    Expr as SExpr, Function, FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr,
+    GroupByWithModifier, Ident, Join as SJoin, JoinConstraint, JoinOperator as SJoinKind,
+    LimitClause, ObjectName, OrderBy, OrderByExpr, OrderByKind, Query as SQuery, Select as SSelect,
+    SelectItem as SSelectItem, SetExpr, SetOperator, SetQuantifier, TableFactor,
+    UnaryOperator as SUnOp, Value, ValueWithSpan, WildcardAdditionalOptions,
+    WindowSpec as SWindowSpec, WindowType, With as SWith,
 };
 
 pub fn map_to_render_query(q: &SQuery) -> R::Query {
@@ -150,7 +150,12 @@ fn map_cte(cte: &SCte) -> R::Cte {
             .iter()
             .map(|c| c.name.value.clone())
             .collect(),
-        query: Box::new(map_query_body(&cte.query.body)),
+        from: cte.from.as_ref().map(|i| i.value.clone()),
+        materialized: cte.materialized.as_ref().map(|m| match m {
+            SCteMat::Materialized => R::CteMaterialized::Materialized,
+            SCteMat::NotMaterialized => R::CteMaterialized::NotMaterialized,
+        }),
+        query: Box::new(map_query_body(&cte.query.as_ref().body)),
     }
 }
 
@@ -688,7 +693,7 @@ fn map_expr(e: &SExpr) -> R::Expr {
         SExpr::Cast {
             expr,
             data_type,
-            kind,
+            kind: _,
             ..
         } => R::Expr::Cast {
             expr: Box::new(map_expr(expr)),
@@ -706,10 +711,10 @@ fn map_expr(e: &SExpr) -> R::Expr {
             name, args, over, ..
         }) if over.is_some() => match over.as_ref().unwrap() {
             WindowType::WindowSpec(SWindowSpec {
-                window_name,
+                window_name: _,
                 partition_by,
                 order_by,
-                window_frame,
+                window_frame: _,
             }) => {
                 let part = partition_by.iter().map(map_expr).collect::<Vec<_>>();
                 let ob = order_by.iter().map(map_order_by_expr).collect();
@@ -724,9 +729,9 @@ fn map_expr(e: &SExpr) -> R::Expr {
                 }
             }
             WindowType::NamedWindow(Ident {
-                quote_style,
-                span,
-                value,
+                quote_style: _,
+                span: _,
+                value: _,
             }) => R::Expr::WindowFunc {
                 name: name.to_string(),
                 args: map_function_arguments(args),

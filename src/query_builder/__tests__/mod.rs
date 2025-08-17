@@ -37,4 +37,7 @@ mod clear;
 #[cfg(test)]
 mod distinct;
 
+#[cfg(test)]
+mod with;
+
 pub mod dialect_test_helpers;

@@ -58,6 +58,8 @@ fn with_cte_simple_pg() {
                 name: "c".into(),
                 columns: vec![],
                 query: Box::new(cte_query),
+                from: None,
+                materialized: None,
             }],
         }),
         body: R::QueryBody::Select(R::Select {
@@ -111,6 +113,8 @@ fn with_recursive_union_all_pg() {
                 name: "t".into(),
                 columns: vec!["n".into()],
                 query: Box::new(set),
+                from: None,
+                materialized: None,
             }],
         }),
         body: R::QueryBody::Select(R::Select {

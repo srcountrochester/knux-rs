@@ -6,9 +6,9 @@ use crate::{
 };
 use smallvec::SmallVec;
 use sqlparser::ast::{
-    Distinct, Expr as SqlExpr, GroupByExpr, Ident, Join, LimitClause, ObjectName, Offset,
+    Cte, Distinct, Expr as SqlExpr, GroupByExpr, Ident, Join, LimitClause, ObjectName, Offset,
     OffsetRows, OrderBy, OrderByExpr, OrderByKind, Query, Select, SelectFlavor, SelectItem,
-    SetExpr, TableAlias, TableFactor, TableWithJoins, helpers::attached_token::AttachedToken,
+    SetExpr, TableAlias, TableFactor, TableWithJoins, With, helpers::attached_token::AttachedToken,
 };
 
 use super::{BuilderErrorList, Error, QueryBuilder, Result};
@@ -27,6 +27,7 @@ impl QueryBuilder {
         }
 
         let limit_clause = self.build_limit_clause();
+        let with = self.take_with_ast();
         let params_sv = mem::take(&mut self.params);
         let from_items = mem::take(&mut self.from_items);
         let (from, mut params) = self.form_from_items(params_sv, from_items)?;
@@ -105,7 +106,7 @@ impl QueryBuilder {
         };
 
         let query = Query {
-            with: None,
+            with,
             body: Box::new(SetExpr::Select(Box::new(select))),
             order_by: order_by_opt,
             fetch: None,

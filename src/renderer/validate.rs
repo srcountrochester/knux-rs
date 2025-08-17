@@ -73,6 +73,17 @@ pub fn validate_query_features(q: &R::Query, cfg: &SqlRenderCfg) -> Option<Error
         }
     }
 
+    if let Some(with) = &q.with {
+        for cte in &with.ctes {
+            if cte.materialized.is_some() && !matches!(cfg.dialect, Dialect::Postgres) {
+                return Some(Error::UnsupportedFeature {
+                    feature: "WITH [NOT] MATERIALIZED".into(),
+                    dialect: cfg.dialect,
+                });
+            }
+        }
+    }
+
     // 5) UNION ... BY NAME — не поддерживается в PG/MySQL/SQLite
     if contains_by_name(&q.body) {
         return Some(Error::UnsupportedFeature {

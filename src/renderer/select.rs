@@ -19,8 +19,11 @@ pub fn render_sql_query(q: &R::Query, cfg: &SqlRenderCfg) -> String {
         w.push(" ");
         for (i, cte) in with.ctes.iter().enumerate() {
             w.push_sep(i, ", ");
-            // name [(col...)] AS ( <query> )
+
+            // name
             w.push(&quote_ident(&cte.name, cfg));
+
+            // (col1, col2, ...)
             if !cte.columns.is_empty() {
                 w.push(" (");
                 for (j, c) in cte.columns.iter().enumerate() {
@@ -31,7 +34,25 @@ pub fn render_sql_query(q: &R::Query, cfg: &SqlRenderCfg) -> String {
                 }
                 w.push(")");
             }
-            w.push(" AS (");
+
+            // FROM <ident>  (если задано)
+            if let Some(from) = &cte.from {
+                w.push(" FROM ");
+                w.push(&quote_ident(from, cfg));
+            }
+
+            // AS [MATERIALIZED|NOT MATERIALIZED] ( ... )
+            w.push(" AS");
+            if let Some(mat) = &cte.materialized {
+                // печатаем только в Postgres; в остальных диалектах опускаем ключевые слова
+                if matches!(cfg.dialect, Dialect::Postgres) {
+                    match mat {
+                        CteMaterialized::Materialized => w.push(" MATERIALIZED"),
+                        CteMaterialized::NotMaterialized => w.push(" NOT MATERIALIZED"),
+                    }
+                }
+            }
+            w.push(" (");
             render_query_body(&mut w, &cte.query, cfg);
             w.push(")");
         }

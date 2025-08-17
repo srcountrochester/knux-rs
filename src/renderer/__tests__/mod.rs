@@ -24,3 +24,6 @@ mod query;
 
 #[cfg(test)]
 mod select_extras;
+
+#[cfg(test)]
+mod with_render;
