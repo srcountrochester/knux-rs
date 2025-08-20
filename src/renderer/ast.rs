@@ -18,7 +18,7 @@ pub struct Select {
     pub distinct_on: Vec<Expr>,
     pub items: Vec<SelectItem>,
     pub from: Option<TableRef>,
-    pub joins: Vec<Join>, // упрощённый вид
+    pub joins: Vec<Join>,
     pub r#where: Option<Expr>,
     pub group_by: Vec<Expr>,
     pub group_by_modifiers: Vec<GroupByModifier>,
@@ -234,4 +234,43 @@ pub struct Query {
 pub struct WindowSpec {
     pub partition_by: Vec<Expr>,
     pub order_by: Vec<OrderItem>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Stmt {
+    Query(Query),
+    Insert(Insert),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Insert {
+    pub table: TableRef, // ожидаем Named { .. }, alias не обязателен (MySQL alias "new" проставим в рендере при необходимости)
+    pub columns: Vec<String>, // пусто ⇒ вставка "по всем"
+    pub rows: Vec<Vec<Expr>>, // VALUES(...) [, (...)]
+    pub ignore: bool, // MySQL: INSERT IGNORE; SQLite: INSERT OR IGNORE; PG: через ON CONFLICT DO NOTHING
+    pub on_conflict: Option<OnConflict>,
+    pub returning: Vec<SelectItem>, // PG/SQLite
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OnConflict {
+    pub target_columns: Vec<String>, // может быть пустым (см. SQLite last clause)
+    pub on_constraint: Option<String>, // для PG/SQLite: ON CONSTRAINT <name>
+    pub action: Option<OnConflictAction>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum OnConflictAction {
+    DoNothing,
+    DoUpdate {
+        set: Vec<Assign>, // SET col = expr / EXCLUDED.col / new.col
+        where_predicate: Option<Expr>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Assign {
+    pub col: String,
+    pub value: Expr,
+    pub from_inserted: bool, // true → PG/SQLite: EXCLUDED.col, MySQL: new.col
 }

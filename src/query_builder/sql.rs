@@ -1,6 +1,6 @@
 use crate::{
     param::Param,
-    query_builder::{QueryBuilder, Result},
+    query_builder::{InsertBuilder, QueryBuilder, Result},
     renderer::{self, Dialect, FeaturePolicy},
 };
 
@@ -20,6 +20,31 @@ impl QueryBuilder {
             renderer::try_render_sql_query(&rq, &cfg)?
         } else {
             renderer::render_sql_query(&rq, &cfg)
+        };
+
+        Ok((sql, params))
+    }
+}
+
+impl InsertBuilder {
+    #[inline]
+    pub fn to_sql(self) -> Result<(String, Vec<Param>)> {
+        let dialect = self.dialect.clone();
+        let (stmt_ast, params) = self.build_insert_ast()?;
+
+        // маппим В ЗАВИСИМОСТИ ОТ ТИПА — в нашем случае это Statement::Insert
+        let rstmt = renderer::map_to_render_stmt(&stmt_ast);
+
+        let cfg = match dialect {
+            Dialect::Postgres => renderer::cfg_postgres_knex(),
+            Dialect::MySQL => renderer::cfg_mysql_knex(),
+            Dialect::SQLite => renderer::cfg_sqlite_knex(),
+        };
+
+        let sql = if matches!(cfg.policy, FeaturePolicy::Strict) {
+            renderer::try_render_sql_stmt(&rstmt, &cfg)?
+        } else {
+            renderer::render_sql_stmt(&rstmt, &cfg)
         };
 
         Ok((sql, params))

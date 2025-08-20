@@ -1,6 +1,6 @@
-use super::dialect_test_helpers::qi;
 use crate::expression::helpers::val;
 use crate::query_builder::QueryBuilder;
+use crate::tests::dialect_test_helpers::qi;
 
 fn norm(s: &str) -> String {
     let mut out = String::with_capacity(s.len());

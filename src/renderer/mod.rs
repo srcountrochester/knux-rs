@@ -3,6 +3,7 @@ pub mod ast;
 mod config;
 mod error;
 mod ident;
+mod insert;
 pub mod map;
 mod select;
 mod validate;
@@ -10,11 +11,16 @@ mod writer;
 
 pub use config::Dialect;
 pub use config::{FeaturePolicy, PlaceholderStyle, QuoteMode, SqlRenderCfg};
-pub use map::map_to_render_query;
+pub use map::{map_to_render_query, map_to_render_stmt};
 pub use select::{render_select, render_sql_query};
 
+use crate::renderer::insert::render_insert;
+use crate::renderer::validate::validate_stmt_features;
 use crate::renderer::{config::MysqlLimitStyle, validate::validate_query_features};
+pub use ast::Expr;
+use ast::Stmt;
 pub use error::{Error, Result};
+pub use writer::SqlWriter;
 
 /// High-level API: рендер SELECT AST в строку SQL.
 pub fn render_sql_select(sel: &ast::Select, cfg: &SqlRenderCfg) -> String {
@@ -27,6 +33,20 @@ pub fn try_render_sql_query(q: &ast::Query, cfg: &SqlRenderCfg) -> Result<String
         return Err(err);
     }
     Ok(render_sql_query(q, cfg))
+}
+
+pub fn render_sql_stmt(s: &Stmt, cfg: &SqlRenderCfg) -> String {
+    match s {
+        Stmt::Query(q) => render_sql_query(q, cfg),
+        Stmt::Insert(i) => render_insert(i, cfg, 256),
+    }
+}
+
+pub fn try_render_sql_stmt(s: &Stmt, cfg: &SqlRenderCfg) -> Result<String> {
+    if let Some(err) = validate_stmt_features(s, cfg) {
+        return Err(err);
+    }
+    Ok(render_sql_stmt(s, cfg))
 }
 
 /// Удобные пресеты под диалекты

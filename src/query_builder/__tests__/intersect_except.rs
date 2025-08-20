@@ -1,6 +1,6 @@
-use super::dialect_test_helpers::qi;
 use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
+use crate::tests::dialect_test_helpers::qi;
 use sqlparser::ast::{SetExpr, SetOperator, SetQuantifier};
 
 fn norm(s: &str) -> String {

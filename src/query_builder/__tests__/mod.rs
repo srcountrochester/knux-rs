@@ -46,4 +46,8 @@ mod union;
 #[cfg(test)]
 mod intersect_except;
 
-pub mod dialect_test_helpers;
+#[cfg(test)]
+mod insert;
+
+#[cfg(test)]
+mod insert_ext;

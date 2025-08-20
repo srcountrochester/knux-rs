@@ -1,6 +1,7 @@
 use super::Error;
 use crate::renderer::{
-    Dialect, ast as R,
+    Dialect,
+    ast::{self as R, Stmt},
     config::{FeaturePolicy, SqlRenderCfg},
 };
 
@@ -92,6 +93,10 @@ pub fn validate_query_features(q: &R::Query, cfg: &SqlRenderCfg) -> Option<Error
         });
     }
 
+    None
+}
+
+pub fn validate_stmt_features(_s: &Stmt, _cfg: &SqlRenderCfg) -> Option<Error> {
     None
 }
 

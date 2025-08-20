@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use crate::{executor::DbPool, param::Param, renderer::Dialect};
 use smallvec::{SmallVec, smallvec};
-use sqlparser::ast::Expr;
 
 mod __tests__;
 mod alias;
@@ -14,6 +13,7 @@ mod error;
 mod from;
 mod group_by;
 mod having;
+pub mod insert;
 mod join;
 mod limit;
 mod order_by;
@@ -30,6 +30,7 @@ use distinct::DistinctOnNode;
 pub use error::{BuilderErrorList, Error, Result};
 use group_by::GroupByNode;
 use having::HavingNode;
+pub use insert::InsertBuilder;
 use join::JoinNode;
 use order_by::OrderByNode;
 use select::SelectItemNode;

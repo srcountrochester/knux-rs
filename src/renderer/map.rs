@@ -1,13 +1,13 @@
 use crate::renderer::ast as R;
 
 use sqlparser::ast::{
-    BinaryOperator as SBinOp, CaseWhen, Cte as SCte, CteAsMaterialized as SCteMat, Distinct,
-    Expr as SExpr, Function, FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr,
-    GroupByWithModifier, Ident, Join as SJoin, JoinConstraint, JoinOperator as SJoinKind,
-    LimitClause, ObjectName, OrderBy, OrderByExpr, OrderByKind, Query as SQuery, Select as SSelect,
-    SelectItem as SSelectItem, SetExpr, SetOperator, SetQuantifier, TableFactor,
-    UnaryOperator as SUnOp, Value, ValueWithSpan, WildcardAdditionalOptions,
-    WindowSpec as SWindowSpec, WindowType, With as SWith,
+    self as S, BinaryOperator as SBinOp, CaseWhen, Cte as SCte, CteAsMaterialized as SCteMat,
+    Distinct, Expr as SExpr, Function, FunctionArg, FunctionArgExpr, FunctionArguments,
+    GroupByExpr, GroupByWithModifier, Ident, Join as SJoin, JoinConstraint,
+    JoinOperator as SJoinKind, LimitClause, ObjectName, OnInsert, OrderBy, OrderByExpr,
+    OrderByKind, Query as SQuery, Select as SSelect, SelectItem as SSelectItem, SetExpr,
+    SetOperator, SetQuantifier, TableFactor, TableObject, UnaryOperator as SUnOp, Value,
+    ValueWithSpan, WildcardAdditionalOptions, WindowSpec as SWindowSpec, WindowType, With as SWith,
 };
 
 pub fn map_to_render_query(q: &SQuery) -> R::Query {
@@ -553,7 +553,7 @@ fn map_join(j: &SJoin) -> R::Join {
     }
 }
 
-fn map_expr(e: &SExpr) -> R::Expr {
+pub fn map_expr(e: &SExpr) -> R::Expr {
     use R::Expr as E;
 
     match e {
@@ -904,5 +904,167 @@ fn map_un_op(op: &SUnOp) -> R::UnOp {
         SUnOp::Not => R::UnOp::Not,
         SUnOp::Minus => R::UnOp::Neg,
         _ => R::UnOp::Neg,
+    }
+}
+
+pub fn map_to_render_stmt(stmt: &S::Statement) -> R::Stmt {
+    match stmt {
+        S::Statement::Query(q) => R::Stmt::Query(super::map_to_render_query(q)),
+        S::Statement::Insert(i) => R::Stmt::Insert(map_insert(i)),
+        _ => unimplemented!("unsupported statement for renderer"),
+    }
+}
+
+fn object_name_to_strings(obj: &S::ObjectName) -> Vec<String> {
+    obj.0.iter().map(|p| p.to_string()).collect()
+}
+
+fn map_table_object(to: &S::TableObject) -> R::TableRef {
+    match to {
+        S::TableObject::TableName(obj) => {
+            let parts = object_name_to_strings(obj);
+            let (schema, name) = match parts.as_slice() {
+                [name] => (None, name.clone()),
+                [schema, name] => (Some(schema.clone()), name.clone()),
+                _ => (None, parts.join("_")),
+            };
+            R::TableRef::Named {
+                schema,
+                name,
+                alias: None,
+            }
+        }
+        // при необходимости добавишь другие варианты (TableFunction и т.п.)
+        _ => panic!("unsupported INSERT target table"),
+    }
+}
+
+fn map_insert(i: &S::Insert) -> R::Insert {
+    // table
+    let table = map_table_object(&i.table);
+
+    // columns
+    let columns: Vec<String> = i.columns.iter().map(|id| id.value.clone()).collect();
+
+    // VALUES → rows
+    let mut rows: Vec<Vec<R::Expr>> = Vec::new();
+    if let Some(q) = &i.source {
+        if let S::SetExpr::Values(S::Values { rows: vs, .. }) = q.body.as_ref() {
+            rows = vs
+                .iter()
+                .map(|r| r.iter().map(map_expr).collect())
+                .collect();
+        }
+    }
+
+    // returning
+    let returning: Vec<R::SelectItem> = i
+        .returning
+        .as_ref()
+        .map(|v| v.iter().map(map_select_item).collect())
+        .unwrap_or_default();
+
+    // ignore (MySQL префикс / SQLite мы не трогаем тут)
+    let ignore = i.ignore;
+
+    // ON DUPLICATE / ON CONFLICT
+    let mut on_conflict: Option<R::OnConflict> = None;
+
+    if let Some(on) = &i.on {
+        match on {
+            // MySQL: INSERT ... ON DUPLICATE KEY UPDATE <assignments>
+            S::OnInsert::DuplicateKeyUpdate(assignments) => {
+                let set = assignments.iter().map(map_assignment).collect::<Vec<_>>();
+                on_conflict = Some(R::OnConflict {
+                    target_columns: Vec::new(),
+                    on_constraint: None,
+                    action: Some(R::OnConflictAction::DoUpdate {
+                        set,
+                        where_predicate: None,
+                    }),
+                });
+            }
+
+            // PG/SQLite: ON CONFLICT { (cols) | ON CONSTRAINT name } DO { NOTHING | UPDATE ... }
+            S::OnInsert::OnConflict(conf) => {
+                let (target_columns, on_constraint) = match &conf.conflict_target {
+                    Some(S::ConflictTarget::Columns(cols)) => {
+                        (cols.iter().map(|c| c.value.clone()).collect(), None)
+                    }
+                    Some(S::ConflictTarget::OnConstraint(obj)) => {
+                        let name = object_name_to_strings(obj).join(".");
+                        (Vec::new(), Some(name))
+                    }
+                    None => (Vec::new(), None),
+                };
+
+                match &conf.action {
+                    S::OnConflictAction::DoNothing => {
+                        on_conflict = Some(R::OnConflict {
+                            target_columns,
+                            on_constraint,
+                            action: Some(R::OnConflictAction::DoNothing),
+                        });
+                    }
+                    S::OnConflictAction::DoUpdate(du) => {
+                        let set = du
+                            .assignments
+                            .iter()
+                            .map(map_assignment)
+                            .collect::<Vec<_>>();
+                        let where_predicate = du.selection.as_ref().map(map_expr);
+                        on_conflict = Some(R::OnConflict {
+                            target_columns,
+                            on_constraint,
+                            action: Some(R::OnConflictAction::DoUpdate {
+                                set,
+                                where_predicate,
+                            }),
+                        });
+                    }
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    R::Insert {
+        table,
+        columns,
+        rows,
+        ignore,
+        on_conflict,
+        returning,
+    }
+}
+
+fn map_assignment(a: &S::Assignment) -> R::Assign {
+    let col = match &a.target {
+        S::AssignmentTarget::ColumnName(obj) => {
+            obj.0.last().map(|id| id.to_string()).unwrap_or_default()
+        }
+        S::AssignmentTarget::Tuple(cols) => cols
+            .last()
+            .and_then(|o| o.0.last())
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
+    };
+
+    // помечаем «из вставки»: PG/SQLite → EXCLUDED.col ; MySQL → new.col
+    let mut from_inserted = false;
+    if let S::Expr::CompoundIdentifier(parts) = &a.value {
+        if let Some(first) = parts.first() {
+            let up = first.value.to_ascii_uppercase();
+            if up == "EXCLUDED" || up == "NEW" {
+                from_inserted = true;
+            }
+        }
+    }
+
+    R::Assign {
+        col,
+        value: map_expr(&a.value),
+        from_inserted,
     }
 }

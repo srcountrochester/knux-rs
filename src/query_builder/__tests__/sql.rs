@@ -1,6 +1,6 @@
-use super::dialect_test_helpers::{col_list, qi, qn};
 use crate::expression::helpers::val;
 use crate::query_builder::QueryBuilder;
+use crate::tests::dialect_test_helpers::{col_list, qi, qn};
 
 /// Грубая нормализация пробелов: схлопываем последовательности в один пробел,
 /// убираем ведущие/замыкающие пробелы. Помогает сделать проверки более стабильными.

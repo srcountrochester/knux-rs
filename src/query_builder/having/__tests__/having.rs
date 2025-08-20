@@ -1,7 +1,7 @@
 use super::super::*;
 use crate::{
     expression::helpers::{col, val},
-    query_builder::__tests__::dialect_test_helpers::qi,
+    tests::dialect_test_helpers::qi,
 };
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr, Query, SetExpr};
 

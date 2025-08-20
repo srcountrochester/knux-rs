@@ -1,6 +1,8 @@
 use super::super::*;
-use super::dialect_test_helpers::qi;
-use crate::expression::helpers::{col, val};
+use crate::{
+    expression::helpers::{col, val},
+    tests::dialect_test_helpers::qi,
+};
 
 #[test]
 fn group_by_single_and_multiple_columns() {

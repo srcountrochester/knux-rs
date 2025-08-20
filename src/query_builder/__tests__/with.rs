@@ -1,7 +1,7 @@
-use super::dialect_test_helpers::qi;
 use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
 use crate::query_builder::error::Error;
+use crate::tests::dialect_test_helpers::qi;
 use sqlparser::ast::CteAsMaterialized;
 
 fn norm(s: &str) -> String {

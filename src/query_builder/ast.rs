@@ -2,14 +2,19 @@ use std::mem;
 
 use crate::{
     param::Param,
-    query_builder::{args::QBClosure, utils::num_expr},
+    query_builder::{
+        InsertBuilder,
+        args::QBClosure,
+        insert::{Assignment, ConflictAction, MergeValue},
+        utils::num_expr,
+    },
+    renderer::Dialect,
 };
 use smallvec::SmallVec;
 use sqlparser::ast::{
-    Cte, Distinct, Expr as SqlExpr, GroupByExpr, Ident, Join, LimitClause, ObjectName, Offset,
-    OffsetRows, OrderBy, OrderByExpr, OrderByKind, Query, Select, SelectFlavor, SelectItem,
-    SetExpr, SetOperator, SetQuantifier, TableAlias, TableFactor, TableWithJoins, With,
-    helpers::attached_token::AttachedToken,
+    self as S, Distinct, Expr as SqlExpr, GroupByExpr, Ident, Join, LimitClause, ObjectName,
+    Offset, OffsetRows, OrderBy, OrderByExpr, OrderByKind, Query, Select, SelectFlavor, SelectItem,
+    SetExpr, TableAlias, TableFactor, TableWithJoins, helpers::attached_token::AttachedToken,
 };
 
 use super::{BuilderErrorList, Error, QueryBuilder, Result};
@@ -308,4 +313,260 @@ impl QueryBuilder {
 
         Ok((from, params))
     }
+}
+
+impl InsertBuilder {
+    pub(crate) fn build_insert_ast(self) -> Result<(S::Statement, Vec<Param>)> {
+        // 1) минимальная валидация
+        let table = match &self.table {
+            Some(t) => t.clone(),
+            None => {
+                return Err(Error::InvalidExpression {
+                    reason: "insert: table is not set".into(),
+                });
+            }
+        };
+        if self.rows.is_empty() {
+            return Err(Error::InvalidExpression {
+                reason: "insert: no VALUES rows".into(),
+            });
+        }
+        if !self.builder_errors.is_empty() {
+            return Err(Error::InvalidExpression {
+                reason: format!("insert: build errors: {:?}", self.builder_errors).into(),
+            });
+        }
+
+        // 2) VALUES → Query(SetExpr::Values)
+        let rows_exprs: Vec<Vec<S::Expr>> = self
+            .rows
+            .iter()
+            .map(|r| r.values.iter().cloned().collect())
+            .collect();
+
+        let values = S::Values {
+            rows: rows_exprs,
+            explicit_row: false,
+        };
+
+        let query = S::Query {
+            with: None,
+            body: Box::new(S::SetExpr::Values(values)),
+            fetch: None,
+            for_clause: None,
+            format_clause: None,
+            limit_clause: None,
+            locks: vec![],
+            order_by: None,
+            pipe_operators: vec![],
+            settings: None,
+        };
+
+        // 3) RETURNING
+        let returning = if self.returning.is_empty() {
+            None
+        } else {
+            Some(self.returning.into_vec())
+        };
+
+        // 4) ON / IGNORE (по диалектам)
+        let on: Option<S::OnInsert> = match self.dialect {
+            Dialect::Postgres => {
+                if let Some(spec) = &self.on_conflict {
+                    use S::{ConflictTarget, DoUpdate, OnConflict, OnConflictAction};
+                    let target = if !spec.target_columns.is_empty() {
+                        Some(ConflictTarget::Columns(
+                            spec.target_columns.iter().cloned().collect(),
+                        ))
+                    } else {
+                        None
+                    };
+                    match &spec.action {
+                        None => {
+                            // если пользователь вызвал .ignore() без явного действия — DO NOTHING
+                            if self.insert_ignore {
+                                Some(S::OnInsert::OnConflict(OnConflict {
+                                    conflict_target: target,
+                                    action: OnConflictAction::DoNothing,
+                                }))
+                            } else {
+                                Some(S::OnInsert::OnConflict(OnConflict {
+                                    conflict_target: target,
+                                    action: OnConflictAction::DoNothing,
+                                }))
+                            }
+                        }
+                        Some(ConflictAction::DoNothing) => {
+                            Some(S::OnInsert::OnConflict(OnConflict {
+                                conflict_target: target,
+                                action: OnConflictAction::DoNothing,
+                            }))
+                        }
+                        Some(ConflictAction::DoUpdate {
+                            set,
+                            where_predicate,
+                        }) => {
+                            let assignments = make_update_assignments_pg_sqlite(set);
+                            Some(S::OnInsert::OnConflict(OnConflict {
+                                conflict_target: target,
+                                action: OnConflictAction::DoUpdate(DoUpdate {
+                                    assignments,
+                                    selection: where_predicate.clone(),
+                                }),
+                            }))
+                        }
+                    }
+                } else if self.insert_ignore {
+                    // Без цели конфликта тоже допустимо: ON CONFLICT DO NOTHING
+                    use S::{OnConflict, OnConflictAction};
+                    Some(S::OnInsert::OnConflict(OnConflict {
+                        conflict_target: None,
+                        action: OnConflictAction::DoNothing,
+                    }))
+                } else {
+                    None
+                }
+            }
+
+            Dialect::SQLite => {
+                if let Some(spec) = &self.on_conflict {
+                    use S::{ConflictTarget, DoUpdate, OnConflict, OnConflictAction};
+                    let target = if !spec.target_columns.is_empty() {
+                        Some(ConflictTarget::Columns(
+                            spec.target_columns.iter().cloned().collect(),
+                        ))
+                    } else {
+                        None
+                    };
+                    match &spec.action {
+                        None => {
+                            // если пользователь вызвал .ignore() без явного действия — DO NOTHING
+                            if self.insert_ignore {
+                                Some(S::OnInsert::OnConflict(OnConflict {
+                                    conflict_target: target,
+                                    action: OnConflictAction::DoNothing,
+                                }))
+                            } else {
+                                Some(S::OnInsert::OnConflict(OnConflict {
+                                    conflict_target: target,
+                                    action: OnConflictAction::DoNothing,
+                                }))
+                            }
+                        }
+                        Some(ConflictAction::DoNothing) => {
+                            Some(S::OnInsert::OnConflict(OnConflict {
+                                conflict_target: target,
+                                action: OnConflictAction::DoNothing,
+                            }))
+                        }
+                        Some(ConflictAction::DoUpdate {
+                            set,
+                            where_predicate,
+                        }) => {
+                            let assignments = make_update_assignments_pg_sqlite(set);
+                            Some(S::OnInsert::OnConflict(OnConflict {
+                                conflict_target: target,
+                                action: OnConflictAction::DoUpdate(DoUpdate {
+                                    assignments,
+                                    selection: where_predicate.clone(),
+                                }),
+                            }))
+                        }
+                    }
+                } else if self.insert_ignore {
+                    None
+                } else {
+                    None
+                }
+            }
+
+            Dialect::MySQL => {
+                // В MySQL апсерт — через DUPLICATE KEY UPDATE; ignore() печатается префиксом INSERT IGNORE
+                if let Some(spec) = &self.on_conflict {
+                    if let Some(ConflictAction::DoUpdate {
+                        set,
+                        where_predicate,
+                    }) = &spec.action
+                    {
+                        let assignments = make_update_assignments_mysql(set);
+                        let _ = where_predicate;
+                        Some(S::OnInsert::DuplicateKeyUpdate(assignments))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
+        // 5) Сборка самого Insert
+        let insert = S::Insert {
+            table: S::TableObject::TableName(table),
+            columns: self.columns.into_vec(),
+            source: Some(Box::new(query)),
+            on,
+            returning,
+            ignore: self.insert_ignore,
+            after_columns: vec![],
+            assignments: vec![],
+            format_clause: None,
+            has_table_keyword: false,
+            insert_alias: None,
+            into: false,
+            or: None,
+            overwrite: false,
+            partitioned: None,
+            priority: None,
+            replace_into: false,
+            settings: None,
+            table_alias: None,
+        };
+
+        // 6) Параметры — порядок важен: сначала VALUES, потом RHS из merge()
+        let mut params: Vec<Param> = Vec::new();
+        for r in self.rows {
+            if !r.params.is_empty() {
+                params.extend(r.params.into_iter());
+            }
+        }
+        if !self.params.is_empty() {
+            params.extend(self.params.into_iter());
+        }
+
+        Ok((S::Statement::Insert(insert), params))
+    }
+}
+
+#[inline]
+fn make_update_assignments_pg_sqlite(set: &[Assignment]) -> Vec<S::Assignment> {
+    set.iter()
+        .map(|a| {
+            let target = S::AssignmentTarget::ColumnName(S::ObjectName::from(vec![a.col.clone()]));
+            let value = match &a.value {
+                MergeValue::Expr(e) => e.clone(),
+                MergeValue::FromInserted(id) => {
+                    S::Expr::CompoundIdentifier(vec![S::Ident::new("EXCLUDED"), id.clone()])
+                }
+            };
+            S::Assignment { target, value }
+        })
+        .collect()
+}
+
+#[inline]
+fn make_update_assignments_mysql(set: &[Assignment]) -> Vec<S::Assignment> {
+    set.iter()
+        .map(|a| {
+            let target = S::AssignmentTarget::ColumnName(S::ObjectName::from(vec![a.col.clone()]));
+            let value = match &a.value {
+                MergeValue::Expr(e) => e.clone(),
+                MergeValue::FromInserted(id) => {
+                    // В рендере INSERT мы добавим "AS new", здесь ссылаемся на new.col
+                    S::Expr::CompoundIdentifier(vec![S::Ident::new("new"), id.clone()])
+                }
+            };
+            S::Assignment { target, value }
+        })
+        .collect()
 }

@@ -27,3 +27,6 @@ mod select_extras;
 
 #[cfg(test)]
 mod with_render;
+
+#[cfg(test)]
+mod insert_render;

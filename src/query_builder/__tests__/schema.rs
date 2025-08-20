@@ -1,5 +1,7 @@
-use super::dialect_test_helpers::{qi, qn};
-use crate::query_builder::QueryBuilder;
+use crate::{
+    query_builder::QueryBuilder,
+    tests::dialect_test_helpers::{qi, qn},
+};
 
 #[test]
 fn from_with_explicit_schema_overrides_default() {

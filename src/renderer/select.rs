@@ -420,7 +420,7 @@ fn render_join(w: &mut SqlWriter, j: &Join, cfg: &SqlRenderCfg) {
     }
 }
 
-fn render_expr(w: &mut SqlWriter, e: &Expr, cfg: &SqlRenderCfg) {
+pub fn render_expr(w: &mut SqlWriter, e: &Expr, cfg: &SqlRenderCfg) {
     match e {
         Expr::Raw(s) => w.push(s),
         Expr::Star => w.push("*"),
