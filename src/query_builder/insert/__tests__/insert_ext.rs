@@ -2,7 +2,7 @@ use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
 
 // Внутренние типы билдера доступны внутри крейта:
-use super::super::insert::{ConflictAction, MergeValue};
+use super::super::{ConflictAction, MergeValue};
 
 use sqlparser::ast::{SelectItem, SelectItemQualifiedWildcardKind};
 

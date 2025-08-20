@@ -38,14 +38,9 @@ pub fn render_insert(i: &R::Insert, cfg: &SqlRenderCfg, cap: usize) -> String {
     // 2) Таблица и колонки
     render_table_ref(&mut w, &i.table, cfg);
     let need_alias_new = matches!(cfg.dialect, Dialect::MySQL)
-        && i.on_conflict
-            .as_ref()
-            .map(|c| matches!(c.action, Some(R::OnConflictAction::DoUpdate { .. })))
-            .unwrap_or(false);
-
-    print!("need_alias_new: {need_alias_new} ");
-    print!("cfg.dialect: {:?} ", cfg.dialect);
-    print!("i.on_conflict: {:?} ", i.on_conflict);
+        && i.on_conflict.as_ref().map_or(false, |c| {
+            matches!(c.action, Some(R::OnConflictAction::DoUpdate { .. }))
+        });
 
     if need_alias_new {
         w.push(" AS ");
@@ -64,15 +59,8 @@ pub fn render_insert(i: &R::Insert, cfg: &SqlRenderCfg, cap: usize) -> String {
                 if let Some(name) = &spec.on_constraint {
                     w.push(" ON CONSTRAINT ");
                     w.push(&quote_ident(name, cfg));
-                } else if !spec.target_columns.is_empty() {
-                    w.push(" (");
-                    for (k, c) in spec.target_columns.iter().enumerate() {
-                        if k > 0 {
-                            w.push(", ");
-                        }
-                        w.push(&quote_ident(c, cfg));
-                    }
-                    w.push(")");
+                } else {
+                    render_conflict_target_columns(&mut w, &spec.target_columns, cfg);
                 }
                 match &spec.action {
                     None => {
@@ -86,23 +74,14 @@ pub fn render_insert(i: &R::Insert, cfg: &SqlRenderCfg, cap: usize) -> String {
                         where_predicate,
                     }) => {
                         w.push(" DO UPDATE SET ");
-                        for (s, a) in set.iter().enumerate() {
-                            if s > 0 {
-                                w.push(", ");
-                            }
-                            w.push(&quote_ident(&a.col, cfg));
-                            w.push(" = ");
-                            if a.from_inserted {
-                                w.push("EXCLUDED.");
-                                w.push(&quote_ident(&a.col, cfg));
-                            } else {
-                                render_expr(&mut w, &a.value, cfg);
-                            }
-                        }
-                        if let Some(pred) = where_predicate {
-                            w.push(" WHERE ");
-                            render_expr(&mut w, pred, cfg);
-                        }
+                        render_set_assignments_common(
+                            &mut w,
+                            set,
+                            where_predicate.as_ref(),
+                            cfg,
+                            "EXCLUDED.",
+                            " WHERE ",
+                        );
                     }
                 }
             } else if i.ignore {
@@ -114,16 +93,7 @@ pub fn render_insert(i: &R::Insert, cfg: &SqlRenderCfg, cap: usize) -> String {
         Dialect::SQLite => {
             if let Some(spec) = &i.on_conflict {
                 w.push(" ON CONFLICT");
-                if !spec.target_columns.is_empty() {
-                    w.push(" (");
-                    for (k, c) in spec.target_columns.iter().enumerate() {
-                        if k > 0 {
-                            w.push(", ");
-                        }
-                        w.push(&quote_ident(c, cfg));
-                    }
-                    w.push(")");
-                }
+                render_conflict_target_columns(&mut w, &spec.target_columns, cfg);
                 match &spec.action {
                     None => {
                         if i.ignore {
@@ -167,23 +137,14 @@ pub fn render_insert(i: &R::Insert, cfg: &SqlRenderCfg, cap: usize) -> String {
                 }) = &spec.action
                 {
                     w.push(" ON DUPLICATE KEY UPDATE ");
-                    for (idx, a) in set.iter().enumerate() {
-                        if idx > 0 {
-                            w.push(", ");
-                        }
-                        w.push(&quote_ident(&a.col, cfg));
-                        w.push(" = ");
-                        if a.from_inserted {
-                            w.push("new.");
-                            w.push(&quote_ident(&a.col, cfg));
-                        } else {
-                            render_expr(&mut w, &a.value, cfg);
-                        }
-                    }
-                    if let Some(pred) = where_predicate {
-                        w.push(" /* WHERE */ ");
-                        render_expr(&mut w, pred, cfg);
-                    }
+                    render_set_assignments_common(
+                        &mut w,
+                        set,
+                        where_predicate.as_ref(),
+                        cfg,
+                        "new.",
+                        " /* WHERE */ ",
+                    );
                 }
             }
             // RETURNING в MySQL не печатаем
@@ -223,12 +184,7 @@ fn render_columns(w: &mut SqlWriter, cols: &[String], cfg: &SqlRenderCfg) {
         return;
     }
     w.push(" (");
-    for (i, c) in cols.iter().enumerate() {
-        if i > 0 {
-            w.push(", ");
-        }
-        w.push(&quote_ident(c, cfg));
-    }
+    push_joined(w, cols, |w, c| w.push(&quote_ident(c, cfg)));
     w.push(")");
 }
 
@@ -275,4 +231,59 @@ fn render_returning(w: &mut SqlWriter, items: &[R::SelectItem], cfg: &SqlRenderC
             }
         }
     }
+}
+
+/// Универсальный вывод списка через запятую
+#[inline]
+fn push_joined<T>(w: &mut SqlWriter, items: &[T], mut f: impl FnMut(&mut SqlWriter, &T)) {
+    for (i, it) in items.iter().enumerate() {
+        if i > 0 {
+            w.push(", ");
+        }
+        f(w, it);
+    }
+}
+
+/// (a = b, c = d, ...) + опциональный WHERE/комментарий.
+/// `inserted_prefix`: "EXCLUDED." (PG/SQLite) или "new." (MySQL)
+/// `where_kw`: " WHERE " (PG/SQLite) или " /* WHERE */ " (MySQL — т.к. WHERE в ON DUPLICATE недопустим)
+#[inline]
+fn render_set_assignments_common(
+    w: &mut SqlWriter,
+    set: &[R::Assign],
+    where_predicate: Option<&R::Expr>,
+    cfg: &SqlRenderCfg,
+    inserted_prefix: &str,
+    where_kw: &str,
+) {
+    push_joined(w, set, |w, a| {
+        w.push(&quote_ident(&a.col, cfg));
+        w.push(" = ");
+        if a.from_inserted {
+            w.push(inserted_prefix);
+            w.push(&quote_ident(&a.col, cfg));
+        } else {
+            render_expr(w, &a.value, cfg);
+        }
+    });
+
+    if let Some(pred) = where_predicate {
+        w.push(where_kw);
+        render_expr(w, pred, cfg);
+    }
+}
+
+/// (col1, col2, ...)
+#[inline]
+fn render_conflict_target_columns<T: AsRef<str>>(
+    w: &mut SqlWriter,
+    cols: &[T],
+    cfg: &SqlRenderCfg,
+) {
+    if cols.is_empty() {
+        return;
+    }
+    w.push(" (");
+    push_joined(w, cols, |w, c| w.push(&quote_ident(c.as_ref(), cfg)));
+    w.push(")");
 }

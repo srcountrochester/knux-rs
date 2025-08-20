@@ -4,6 +4,7 @@ pub mod param;
 pub mod query_builder;
 pub mod renderer;
 mod tests;
+mod utils;
 
 #[cfg(not(any(feature = "postgres", feature = "mysql", feature = "sqlite")))]
 compile_error!("Enable exactly one DB feature: `postgres`, `mysql`, or `sqlite`.");

@@ -45,9 +45,3 @@ mod union;
 
 #[cfg(test)]
 mod intersect_except;
-
-#[cfg(test)]
-mod insert;
-
-#[cfg(test)]
-mod insert_ext;

@@ -6,9 +6,9 @@ use crate::{
         InsertBuilder,
         args::QBClosure,
         insert::{Assignment, ConflictAction, MergeValue},
-        utils::num_expr,
     },
     renderer::Dialect,
+    utils::num_expr,
 };
 use smallvec::SmallVec;
 use sqlparser::ast::{

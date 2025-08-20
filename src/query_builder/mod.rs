@@ -21,7 +21,6 @@ mod schema;
 mod select;
 mod sql;
 mod union;
-mod utils;
 mod where_clause;
 mod with;
 
