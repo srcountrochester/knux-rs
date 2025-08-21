@@ -240,6 +240,7 @@ pub struct WindowSpec {
 pub enum Stmt {
     Query(Query),
     Insert(Insert),
+    Update(Update),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -273,4 +274,21 @@ pub struct Assign {
     pub col: String,
     pub value: Expr,
     pub from_inserted: bool, // true → PG/SQLite: EXCLUDED.col, MySQL: new.col
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SqliteOr {
+    Replace,
+    Ignore,
+    // (на будущее: Rollback, Abort, Fail)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Update {
+    pub table: TableRef,
+    pub set: Vec<Assign>,            // col = expr
+    pub r#where: Option<Expr>,       // WHERE
+    pub returning: Vec<SelectItem>,  // PG/SQLite; для MySQL оставляем пустым
+    pub from: Vec<TableRef>,         // UPDATE ... FROM ...
+    pub sqlite_or: Option<SqliteOr>, // UPDATE OR <...>
 }

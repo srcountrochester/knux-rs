@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::renderer::ast as R;
+use crate::renderer::{ast as R, map::map_to_render_ast};
 use sqlparser::ast::{
     self as S, Expr as SExpr, Function, FunctionArg, FunctionArgExpr, FunctionArguments,
     ObjectName, OrderBy, OrderByExpr, OrderByKind, UnaryOperator as SUnOp, Value, ValueWithSpan,
@@ -418,5 +418,48 @@ pub(crate) fn split_object_name_cow<'a>(
                 part_as_cow(&parts[last]),
             )
         }
+    }
+}
+
+/// TableFactor -> TableRef (разрешает и базовые таблицы, и подзапросы)
+pub(crate) fn map_table_factor_any(tf: &S::TableFactor) -> R::TableRef {
+    match tf {
+        S::TableFactor::Table { name, alias, .. } => {
+            let (schema_cow, name_cow) = split_object_name_cow(name);
+            R::TableRef::Named {
+                schema: schema_cow.map(|c| c.into_owned()),
+                name: name_cow.into_owned(),
+                alias: alias.as_ref().map(|a| a.name.value.clone()),
+            }
+        }
+        S::TableFactor::Derived {
+            subquery, alias, ..
+        } => {
+            let inner = map_to_render_ast(subquery);
+            R::TableRef::Subquery {
+                query: Box::new(inner),
+                alias: alias.as_ref().map(|a| a.name.value.clone()),
+            }
+        }
+        other => R::TableRef::Named {
+            schema: None,
+            name: other.to_string(),
+            alias: None,
+        },
+    }
+}
+
+/// Только базовая таблица; прочие варианты — panic (удобно для UPDATE FROM)
+pub(crate) fn map_table_factor_named(tf: &S::TableFactor) -> R::TableRef {
+    match tf {
+        S::TableFactor::Table { name, alias, .. } => {
+            let (schema_cow, name_cow) = split_object_name_cow(name);
+            R::TableRef::Named {
+                schema: schema_cow.map(|c| c.into_owned()),
+                name: name_cow.into_owned(),
+                alias: alias.as_ref().map(|a| a.name.value.clone()),
+            }
+        }
+        _ => panic!("unsupported table factor (expected base table)"),
     }
 }

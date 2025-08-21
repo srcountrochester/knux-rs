@@ -21,3 +21,6 @@ mod with_render;
 
 #[cfg(test)]
 mod insert_render;
+
+#[cfg(test)]
+mod update;

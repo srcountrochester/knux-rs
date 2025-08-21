@@ -1,3 +1,4 @@
+mod __tests__;
 pub mod executor;
 pub mod expression;
 pub mod param;

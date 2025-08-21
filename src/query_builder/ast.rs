@@ -6,6 +6,7 @@ use crate::{
         InsertBuilder,
         args::QBClosure,
         insert::{Assignment, ConflictAction, MergeValue},
+        update::UpdateBuilder,
     },
     renderer::Dialect,
     utils::num_expr,
@@ -535,6 +536,121 @@ impl InsertBuilder {
         }
 
         Ok((S::Statement::Insert(insert), params))
+    }
+}
+
+impl UpdateBuilder {
+    pub(crate) fn build_update_ast(self) -> Result<(S::Statement, Vec<Param>)> {
+        // 1) проверки
+        let table = match &self.table {
+            Some(t) => t.clone(),
+            None => {
+                return Err(Error::InvalidExpression {
+                    reason: "update: table is not set".into(),
+                });
+            }
+        };
+        if self.set.is_empty() {
+            return Err(Error::InvalidExpression {
+                reason: "update: SET is empty".into(),
+            });
+        }
+        if !self.builder_errors.is_empty() {
+            return Err(Error::InvalidExpression {
+                reason: format!("update: build errors: {:?}", self.builder_errors).into(),
+            });
+        }
+
+        // 2) assignments
+        let assignments: Vec<S::Assignment> = self
+            .set
+            .into_iter()
+            .map(|a| S::Assignment {
+                target: S::AssignmentTarget::ColumnName(S::ObjectName::from(vec![S::Ident::new(
+                    a.col,
+                )])),
+                value: a.value,
+            })
+            .collect();
+
+        // 3) WHERE
+        let selection = self.where_predicate;
+
+        // 4) RETURNING
+        let returning = if self.returning.is_empty() {
+            None
+        } else {
+            Some(self.returning.into_vec())
+        };
+
+        // 5) Сборка Update
+        // Простейший UPDATE <schema?.>table SET ... [WHERE ...] [RETURNING ...]
+        // Без FROM/JOIN — при необходимости можно будет расширить.
+        let table_factor = S::TableFactor::Table {
+            name: table,
+            alias: None,
+            args: None,
+            with_hints: vec![],
+            version: None,
+            partitions: vec![],
+            with_ordinality: false,
+            index_hints: vec![],
+            json_path: None,
+            sample: None,
+        };
+        let table_with_joins = S::TableWithJoins {
+            relation: table_factor,
+            joins: vec![],
+        };
+
+        let from: Option<S::UpdateTableFromKind> = if self.from_items.is_empty() {
+            None
+        } else {
+            let mut tables: Vec<S::TableWithJoins> = Vec::with_capacity(self.from_items.len());
+            for it in self.from_items {
+                match it {
+                    FromItem::TableName(name) => {
+                        let tf = S::TableFactor::Table {
+                            name,
+                            alias: None,
+                            args: None,
+                            with_hints: vec![],
+                            version: None,
+                            partitions: vec![],
+                            with_ordinality: false,
+                            index_hints: vec![],
+                            json_path: None,
+                            sample: None,
+                        };
+                        tables.push(S::TableWithJoins {
+                            relation: tf,
+                            joins: vec![],
+                        });
+                    }
+                    FromItem::Subquery(_) | FromItem::SubqueryClosure(_) => {
+                        return Err(Error::InvalidExpression {
+                            reason: "update.from(): subqueries are not supported yet".into(),
+                        });
+                    }
+                }
+            }
+            Some(S::UpdateTableFromKind::AfterSet(tables))
+        };
+
+        // SQLite OR
+        let or_clause = self.sqlite_or;
+
+        Ok((
+            S::Statement::Update {
+                assignments,
+                from,
+                selection: selection,
+                or: or_clause,
+                returning: returning,
+                table: table_with_joins,
+            },
+            self.params.into_vec(),
+        ))
     }
 }
 

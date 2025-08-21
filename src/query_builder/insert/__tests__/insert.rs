@@ -284,7 +284,6 @@ fn insert_compound_identifier_column_uses_last_segment() {
 
 // ==== Смоук-тесты на «пустые» случаи (пока помечены ignore, если ArgList для () не поддержан) ====
 
-#[ignore = "enable when ArgList implements zero-arity tuples"]
 #[test]
 fn insert_no_columns_empty_data_error() {
     let ins = QueryBuilder::new_empty().into("users").insert(()); // пусто
@@ -294,7 +293,6 @@ fn insert_no_columns_empty_data_error() {
     );
 }
 
-#[ignore = "enable when ArgList implements zero-arity tuples"]
 #[test]
 fn insert_columns_empty_list_error() {
     let ins = QueryBuilder::new_empty()

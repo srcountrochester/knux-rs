@@ -1,8 +1,10 @@
-use crate::query_builder::{
-    FromItem, QueryBuilder,
-    args::{ArgList, QBArg},
+use crate::{
+    query_builder::{
+        FromItem, QueryBuilder,
+        args::{ArgList, QBArg},
+    },
+    utils::expr_to_object_name,
 };
-use sqlparser::ast::{Expr, Ident, ObjectName, ObjectNamePart};
 
 impl QueryBuilder {
     /// FROM <table | (subquery)>
@@ -25,7 +27,7 @@ impl QueryBuilder {
                         self.params.append(&mut p);
                     }
 
-                    if let Some(name) = Self::expr_to_object_name(e.expr, self.active_schema()) {
+                    if let Some(name) = expr_to_object_name(e.expr, self.active_schema()) {
                         self.from_items.push(FromItem::TableName(name));
                     }
                 }
@@ -48,30 +50,5 @@ impl QueryBuilder {
         let v = std::mem::take(&mut *self);
         *self = v.from(items);
         self
-    }
-
-    #[inline]
-    /// Попытка интерпретировать Expr как имя таблицы:
-    /// - Identifier("users")  → [default_schema?].users
-    /// - CompoundIdentifier(["s","t"]) → s.t
-    fn expr_to_object_name(expr: Expr, default_schema: Option<&str>) -> Option<ObjectName> {
-        match expr {
-            Expr::Identifier(ident) => {
-                let mut parts = Vec::new();
-                if let Some(s) = default_schema {
-                    parts.push(ObjectNamePart::Identifier(Ident::new(s)));
-                }
-                parts.push(ObjectNamePart::Identifier(ident));
-                Some(ObjectName(parts))
-            }
-            Expr::CompoundIdentifier(idents) => {
-                let parts = idents
-                    .into_iter()
-                    .map(ObjectNamePart::Identifier)
-                    .collect::<Vec<_>>();
-                Some(ObjectName(parts))
-            }
-            _ => None,
-        }
     }
 }

@@ -8,7 +8,7 @@ use crate::query_builder::{
     args::{ArgList, QBArg},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct DistinctOnNode {
     pub expr: SqlExpr,
     pub params: SmallVec<[Param; 8]>,

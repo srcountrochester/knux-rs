@@ -6,6 +6,7 @@ mod ident;
 mod insert;
 pub mod map;
 mod select;
+mod update;
 mod validate;
 mod writer;
 
@@ -39,6 +40,7 @@ pub fn render_sql_stmt(s: &Stmt, cfg: &SqlRenderCfg) -> String {
     match s {
         Stmt::Query(q) => render_sql_query(q, cfg),
         Stmt::Insert(i) => render_insert(i, cfg, 256),
+        Stmt::Update(u) => update::render_update(u, cfg, 256),
     }
 }
 

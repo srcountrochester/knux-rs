@@ -1,10 +1,11 @@
 use crate::param::Param;
-use crate::query_builder::insert::utils::{expr_last_ident, object_name_from_default};
+use crate::query_builder::insert::utils::expr_last_ident;
 use crate::query_builder::{
     QueryBuilder,
     args::{ArgList, QBArg},
 };
 use crate::renderer::Dialect;
+use crate::utils::{expr_to_object_name, object_name_from_default};
 use smallvec::SmallVec;
 use sqlparser::ast::{Expr as SqlExpr, Ident, ObjectName, SelectItem};
 
@@ -48,11 +49,31 @@ impl InsertBuilder {
 
     /// Целевая таблица: `INSERT INTO <table>`
     #[inline]
-    pub fn into(mut self, table: &str) -> Self {
-        self.table = Some(object_name_from_default(
-            self.default_schema.as_deref(),
-            table,
-        ));
+    pub fn into<L>(mut self, table_arg: L) -> Self
+    where
+        L: ArgList,
+    {
+        let mut args = table_arg.into_vec();
+        if args.is_empty() {
+            self.push_builder_error("into(): table is not set");
+            return self;
+        }
+        if args.len() > 1 {
+            self.push_builder_error("into(): expected a single table argument");
+        }
+
+        match args.swap_remove(0).try_into_expr() {
+            Ok((expr, _)) => {
+                if let Some(obj) = expr_to_object_name(expr, self.default_schema.as_deref()) {
+                    self.table = Some(obj);
+                } else {
+                    self.push_builder_error(
+                        "into(): invalid table reference; expected identifier or schema.table",
+                    );
+                }
+            }
+            Err(e) => self.push_builder_error(format!("into(): {e}")),
+        }
         self
     }
 
@@ -223,7 +244,10 @@ impl QueryBuilder {
     }
 
     /// Начать INSERT с указанием таблицы (данные можно передать потом через .insert(...))
-    pub fn into(self, table: &str) -> InsertBuilder {
-        InsertBuilder::from_qb(self).into(table)
+    pub fn into<L>(self, table_arg: L) -> InsertBuilder
+    where
+        L: ArgList,
+    {
+        InsertBuilder::from_qb(self).into(table_arg)
     }
 }

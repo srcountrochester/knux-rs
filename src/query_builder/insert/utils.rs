@@ -1,6 +1,6 @@
 use crate::{param::Param, utils::parse_object_name};
 use smallvec::SmallVec;
-use sqlparser::ast::{Expr as SqlExpr, Ident, ObjectName};
+use sqlparser::ast::{Expr as SqlExpr, Ident, ObjectName, ObjectNamePart};
 
 /// Одна строка для VALUES(...)
 #[derive(Debug, Clone)]
@@ -57,17 +57,5 @@ pub(crate) fn expr_last_ident(expr: SqlExpr) -> Result<Ident, &'static str> {
         SqlExpr::Identifier(id) => Ok(id),
         SqlExpr::CompoundIdentifier(mut parts) => parts.pop().ok_or("invalid compound identifier"),
         _ => Err("expression is not an identifier"),
-    }
-}
-
-/// Если table без схемы — префиксует default_schema (если задана)
-#[inline]
-pub(crate) fn object_name_from_default(default_schema: Option<&str>, table: &str) -> ObjectName {
-    if table.contains('.') {
-        parse_object_name(table)
-    } else if let Some(schema) = default_schema {
-        ObjectName::from(vec![Ident::new(schema), Ident::new(table)])
-    } else {
-        ObjectName::from(vec![Ident::new(table)])
     }
 }

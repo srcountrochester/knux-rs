@@ -1,5 +1,5 @@
 use super::utils::{literal_u64, map_expr, map_order_by, map_select_item, split_object_name};
-use crate::renderer::ast as R;
+use crate::renderer::{ast as R, map::utils::map_table_factor_any};
 use sqlparser::ast::{
     self as S, Cte as SCte, CteAsMaterialized as SCteMat, Distinct, Expr as SExpr, Function,
     FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, GroupByWithModifier,
@@ -227,11 +227,11 @@ fn map_select_to_render_ast(sel: &SSelect) -> R::Select {
 
     for twj in &sel.from {
         if from_named.is_none() {
-            from_named = Some(map_table_factor(&twj.relation));
+            from_named = Some(map_table_factor_any(&twj.relation));
         } else {
             joins.push(R::Join {
                 kind: R::JoinKind::Cross,
-                table: map_table_factor(&twj.relation),
+                table: map_table_factor_any(&twj.relation),
                 on: None,
                 using_cols: None,
             });
@@ -359,33 +359,6 @@ fn map_group_by(sel: &SSelect) -> (Vec<R::Expr>, Vec<R::GroupByModifier>) {
     }
 }
 
-fn map_table_factor(tf: &TableFactor) -> R::TableRef {
-    match tf {
-        TableFactor::Table { name, alias, .. } => {
-            let (schema, table) = split_object_name(name);
-            R::TableRef::Named {
-                schema,
-                name: table,
-                alias: alias.as_ref().map(|a| a.name.value.clone()),
-            }
-        }
-        TableFactor::Derived {
-            subquery, alias, ..
-        } => {
-            let inner = map_to_render_ast(subquery);
-            R::TableRef::Subquery {
-                query: Box::new(inner),
-                alias: alias.as_ref().map(|a| a.name.value.clone()),
-            }
-        }
-        other => R::TableRef::Named {
-            schema: None,
-            name: other.to_string(),
-            alias: None,
-        },
-    }
-}
-
 fn map_join(j: &SJoin) -> R::Join {
     use R::JoinKind as JK;
     let (nat, constraint_opt) = match &j.join_operator {
@@ -435,7 +408,7 @@ fn map_join(j: &SJoin) -> R::Join {
 
     R::Join {
         kind,
-        table: map_table_factor(&j.relation),
+        table: map_table_factor_any(&j.relation),
         on,
         using_cols,
     }
