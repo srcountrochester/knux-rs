@@ -24,3 +24,6 @@ mod insert_render;
 
 #[cfg(test)]
 mod update;
+
+#[cfg(test)]
+mod delete;

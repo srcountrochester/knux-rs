@@ -1,6 +1,6 @@
 use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
-use sqlparser::ast::{Expr as SqlExpr, LimitClause, Query, SetExpr};
+use sqlparser::ast::{LimitClause, Query, SetExpr};
 
 /// Достаём SELECT из Query
 fn select_of(q: &Query) -> &sqlparser::ast::Select {

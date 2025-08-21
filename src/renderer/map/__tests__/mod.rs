@@ -6,3 +6,6 @@ mod update;
 
 #[cfg(test)]
 mod utils;
+
+#[cfg(test)]
+mod delete;

@@ -8,6 +8,7 @@ mod alias;
 mod args;
 mod ast;
 mod clear;
+mod delete;
 mod distinct;
 mod error;
 mod from;

@@ -1,6 +1,7 @@
 mod __tests__;
 pub mod ast;
 mod config;
+mod delete;
 mod error;
 mod ident;
 mod insert;
@@ -41,6 +42,7 @@ pub fn render_sql_stmt(s: &Stmt, cfg: &SqlRenderCfg) -> String {
         Stmt::Query(q) => render_sql_query(q, cfg),
         Stmt::Insert(i) => render_insert(i, cfg, 256),
         Stmt::Update(u) => update::render_update(u, cfg, 256),
+        Stmt::Delete(d) => delete::render_delete(d, cfg, 256),
     }
 }
 

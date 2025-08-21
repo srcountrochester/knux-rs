@@ -1,4 +1,4 @@
-use crate::expression::helpers::val;
+use crate::expression::helpers::{col, table, val};
 use crate::query_builder::QueryBuilder;
 use crate::tests::dialect_test_helpers::{col_list, qi, qn};
 
@@ -184,4 +184,137 @@ fn to_sql_from_mixed_table_subquery_and_closure() {
         qi("users"),
         sql
     );
+}
+
+#[test]
+fn insert_into_with_columns_values_and_params() {
+    // INSERT INTO users (id, age) VALUES (?, ?)
+    let (sql, params) = QueryBuilder::new_empty()
+        .into("users")
+        .columns(("id", "age"))
+        .insert((val(1i32), val(2i32)))
+        .to_sql()
+        .expect("insert to_sql");
+
+    let sqln = norm(&sql);
+    assert!(
+        sqln.contains(&format!("INSERT INTO {}", qi("users"))),
+        "got: {sql}"
+    );
+    assert!(
+        sqln.contains(&format!("( {} )", col_list(&["id", "age"]))) || sqln.contains(" ("),
+        "got: {sql}"
+    );
+    assert!(sqln.contains("VALUES"), "got: {sql}");
+    assert_eq!(params.len(), 2, "params must contain 2 values");
+}
+
+#[test]
+fn insert_into_with_default_schema() {
+    // default_schema префиксует простое имя
+    let (sql, _params) = QueryBuilder::new_empty()
+        .with_default_schema(Some("public".into()))
+        .into("users")
+        .columns(("id",))
+        .insert((val(10i32),))
+        .to_sql()
+        .expect("insert");
+
+    assert!(
+        sql.contains(&format!("INSERT INTO {}", qn(&["public", "users"]))),
+        "got: {sql}"
+    );
+}
+
+#[test]
+fn insert_returning_is_emitted() {
+    // Для дефолтного диалекта (как правило, PG в тестах) должен быть RETURNING
+    let (sql, _params) = QueryBuilder::new_empty()
+        .into("t")
+        .columns(("x",))
+        .insert((val(1i32),))
+        .returning(("x",))
+        .to_sql()
+        .expect("insert returning");
+
+    assert!(sql.contains("RETURNING"), "got: {sql}");
+}
+
+#[test]
+fn update_set_and_where_to_sql() {
+    // UPDATE users SET age = ? WHERE id = ?
+    let (sql, params) = QueryBuilder::new_empty()
+        .update("users")
+        .set(("age", val(30i32)))
+        .r#where((col("id").eq(val(1i32)),))
+        .to_sql()
+        .expect("update");
+    let sqln = norm(&sql);
+    assert!(
+        sqln.starts_with("UPDATE") || sqln.contains(" UPDATE "),
+        "got: {sql}"
+    );
+    assert!(
+        sqln.contains(&format!("UPDATE {}", qi("users"))),
+        "got: {sql}"
+    );
+    assert!(sqln.contains(" SET "), "got: {sql}");
+    assert!(sqln.contains(" WHERE "), "got: {sql}");
+    assert_eq!(params.len(), 2, "one param from SET, one from WHERE");
+}
+
+#[test]
+fn update_with_from_sources() {
+    // UPDATE t SET x = ? FROM a, b
+    let (sql, params) = QueryBuilder::new_empty()
+        .update("t")
+        .set(("x", val(1i32)))
+        .from(("a", "b"))
+        .to_sql()
+        .expect("update with from");
+    let sqln = norm(&sql);
+    assert!(sqln.contains(&format!("UPDATE {}", qi("t"))), "got: {sql}");
+    assert!(sqln.contains(" SET "), "got: {sql}");
+    assert!(
+        sqln.contains(&format!("FROM {}, {}", qi("a"), qi("b"))),
+        "got: {sql}"
+    );
+    assert_eq!(params.len(), 1);
+}
+
+#[test]
+fn delete_basic_where_and_returning() {
+    // DELETE FROM t WHERE id = ? RETURNING *
+    let (sql, params) = QueryBuilder::new_empty()
+        .delete(table("t"))
+        .r#where((col("id").eq(val(10i32)),))
+        .returning_all()
+        .to_sql()
+        .expect("delete");
+    let sqln = norm(&sql);
+    assert!(
+        sqln.starts_with("DELETE") || sqln.contains(" DELETE "),
+        "got: {sql}"
+    );
+    assert!(sqln.contains(&format!("FROM {}", qi("t"))), "got: {sql}");
+    assert!(sqln.contains(" WHERE "), "got: {sql}");
+    assert!(sqln.contains(" RETURNING "), "got: {sql}");
+    assert_eq!(params.len(), 1);
+}
+
+#[test]
+fn delete_using_multiple_tables() {
+    // DELETE FROM t USING a, b
+    let (sql, params) = QueryBuilder::new_empty()
+        .delete("t")
+        .using(("a", "b"))
+        .to_sql()
+        .expect("delete using");
+    let sqln = norm(&sql);
+    assert!(sqln.contains(&format!("FROM {}", qi("t"))), "got: {sql}");
+    assert!(
+        sqln.contains(&format!("USING {}, {}", qi("a"), qi("b"))),
+        "got: {sql}"
+    );
+    assert!(params.is_empty());
 }

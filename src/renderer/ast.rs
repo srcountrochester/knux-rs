@@ -241,6 +241,7 @@ pub enum Stmt {
     Query(Query),
     Insert(Insert),
     Update(Update),
+    Delete(Delete),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -291,4 +292,12 @@ pub struct Update {
     pub returning: Vec<SelectItem>,  // PG/SQLite; для MySQL оставляем пустым
     pub from: Vec<TableRef>,         // UPDATE ... FROM ...
     pub sqlite_or: Option<SqliteOr>, // UPDATE OR <...>
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Delete {
+    pub table: TableRef,
+    pub using: Vec<TableRef>,       // PG/MySQL: USING ...
+    pub r#where: Option<Expr>,      // WHERE ...
+    pub returning: Vec<SelectItem>, // PG/SQLite; для MySQL игнорим при рендере
 }

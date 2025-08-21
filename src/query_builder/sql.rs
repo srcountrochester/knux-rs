@@ -1,6 +1,8 @@
 use crate::{
     param::Param,
-    query_builder::{InsertBuilder, QueryBuilder, Result, update::UpdateBuilder},
+    query_builder::{
+        InsertBuilder, QueryBuilder, Result, delete::DeleteBuilder, update::UpdateBuilder,
+    },
     renderer::{self, Dialect, FeaturePolicy},
 };
 
@@ -69,6 +71,30 @@ impl UpdateBuilder {
             renderer::try_render_sql_stmt(&rstmt, &cfg)?
         } else {
             renderer::render_sql_stmt(&rstmt, &cfg)
+        };
+
+        Ok((sql, params))
+    }
+}
+
+impl DeleteBuilder {
+    #[inline]
+    pub fn to_sql(self) -> Result<(String, Vec<Param>)> {
+        let dialect = self.dialect.clone();
+        let (stmt_ast, params) = self.build_delete_ast()?;
+
+        let rstmt = crate::renderer::map_to_render_stmt(&stmt_ast);
+
+        let cfg = match dialect {
+            Dialect::Postgres => crate::renderer::cfg_postgres_knex(),
+            Dialect::MySQL => crate::renderer::cfg_mysql_knex(),
+            Dialect::SQLite => crate::renderer::cfg_sqlite_knex(),
+        };
+
+        let sql = if matches!(cfg.policy, crate::renderer::FeaturePolicy::Strict) {
+            crate::renderer::try_render_sql_stmt(&rstmt, &cfg)?
+        } else {
+            crate::renderer::render_sql_stmt(&rstmt, &cfg)
         };
 
         Ok((sql, params))

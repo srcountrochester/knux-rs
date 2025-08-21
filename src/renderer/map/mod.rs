@@ -2,6 +2,7 @@ use crate::renderer::ast as R;
 use sqlparser::ast as S;
 
 mod __tests__;
+mod delete;
 mod insert;
 mod select;
 mod update;
@@ -15,6 +16,7 @@ pub fn map_to_render_stmt(stmt: &S::Statement) -> R::Stmt {
         S::Statement::Query(q) => R::Stmt::Query(select::map_to_render_query(q)),
         S::Statement::Insert(i) => R::Stmt::Insert(insert::map_insert(i)),
         u if matches!(u, S::Statement::Update { .. }) => R::Stmt::Update(update::map_update(u)),
+        S::Statement::Delete(del) => R::Stmt::Delete(delete::map_delete(del)),
         _ => unimplemented!("unsupported statement for renderer"),
     }
 }
