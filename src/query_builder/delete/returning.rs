@@ -16,10 +16,17 @@ where
     if list.is_empty() {
         return Err("returning(): empty list".into());
     }
+
+    let start_len = buf.len();
+    buf.reserve(list.len());
     for a in list {
         match a.try_into_expr() {
-            Ok((expr, _p)) => buf.push(SelectItem::UnnamedExpr(expr)),
-            Err(e) => return Err(format!("returning(): {e}").into()),
+            Ok((expr, _)) => buf.push(SelectItem::UnnamedExpr(expr)),
+            Err(e) => {
+                // откат, чтобы не оставлять частично добавленные элементы
+                buf.truncate(start_len);
+                return Err(format!("returning(): {e}").into());
+            }
         }
     }
     Ok(())
@@ -33,12 +40,12 @@ pub(crate) fn set_returning_one<L>(
 where
     L: ArgList,
 {
-    let mut args = item.into_vec();
-    if args.is_empty() {
+    let mut it = item.into_vec().into_iter();
+    let Some(first) = it.next() else {
         return Err("returning_one(): expected a single expression".into());
-    }
-    // если >1 — берём первый валидный
-    match args.swap_remove(0).try_into_expr() {
+    };
+
+    match first.try_into_expr() {
         Ok((expr, _)) => {
             buf.clear();
             buf.push(SelectItem::UnnamedExpr(expr));
@@ -57,12 +64,15 @@ pub(crate) fn set_returning_all(buf: &mut SmallVec<[SelectItem; 4]>) {
 /// RETURNING <qualifier>.*
 pub(crate) fn set_returning_all_from(buf: &mut SmallVec<[SelectItem; 4]>, qualifier: &str) {
     buf.clear();
-    let obj = ObjectName::from(
-        qualifier
-            .split('.')
-            .map(sqlparser::ast::Ident::new)
-            .collect::<Vec<_>>(),
-    );
+
+    // Предварительно оцениваем ёмкость по числу '.' + 1
+    let parts_cap = qualifier.as_bytes().iter().filter(|&&b| b == b'.').count() + 1;
+    let mut idents = Vec::with_capacity(parts_cap);
+    for part in qualifier.split('.') {
+        idents.push(sqlparser::ast::Ident::new(part));
+    }
+    let obj = ObjectName::from(idents);
+
     let kind = SelectItemQualifiedWildcardKind::ObjectName(obj);
     buf.push(SelectItem::QualifiedWildcard(
         kind,

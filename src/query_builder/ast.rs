@@ -36,38 +36,52 @@ impl QueryBuilder {
 
         let limit_clause = self.build_limit_clause();
         let with = self.take_with_ast();
+
+        // соберём params и FROM сразу
         let params_sv = mem::take(&mut self.params);
         let from_items = mem::take(&mut self.from_items);
         let (from, mut params) = self.form_from_items(params_sv, from_items)?;
 
-        // проекция по умолчанию: SELECT *
-        let projection: SmallVec<[SelectItem; 4]> = if self.select_items.is_empty() {
-            let mut sv = SmallVec::new();
-            sv.push(SelectItem::Wildcard(Default::default()));
-            sv
-        } else {
-            self.select_items.iter().map(|n| n.item.clone()).collect()
-        };
+        // --- projection + select_params в одном проходе ---
+        let (projection, select_params): (Vec<SelectItem>, Vec<Param>) =
+            if self.select_items.is_empty() {
+                (vec![SelectItem::Wildcard(Default::default())], Vec::new())
+            } else {
+                let cap = self.select_items.len();
+                let mut proj: Vec<SelectItem> = Vec::with_capacity(cap);
+                let mut sel_params: Vec<Param> = Vec::new();
+                for node in self.select_items.drain(..) {
+                    proj.push(node.item);
+                    if !node.params.is_empty() {
+                        sel_params.extend(node.params.into_iter());
+                    }
+                }
+                (proj, sel_params)
+            };
 
         let selection = self.where_clause.as_ref().map(|n| n.expr.clone());
         let having = self.having_clause.as_ref().map(|n| n.expr.clone());
 
+        // --- group_by + group_params в одном проходе ---
         let (group_by_exprs, group_params): (Vec<SqlExpr>, Vec<Param>) = {
             let mut exprs = Vec::with_capacity(self.group_by_items.len());
             let mut gparams: Vec<Param> = Vec::new();
             for node in self.group_by_items.drain(..) {
                 exprs.push(node.expr);
-                gparams.extend(node.params.into_vec());
+                if !node.params.is_empty() {
+                    gparams.extend(node.params.into_iter());
+                }
             }
             (exprs, gparams)
         };
 
+        // --- DISTINCT/ON без лишних аллокаций ---
         let distinct_opt = if !self.distinct_on_items.is_empty() {
             let mut on_exprs: Vec<SqlExpr> = Vec::with_capacity(self.distinct_on_items.len());
-            for mut n in self.distinct_on_items.into_vec() {
+            for n in self.distinct_on_items.drain(..) {
                 on_exprs.push(n.expr);
                 if !n.params.is_empty() {
-                    params.extend(n.params.drain(..).collect::<Vec<_>>());
+                    params.extend(n.params.into_iter());
                 }
             }
             Some(Distinct::On(on_exprs))
@@ -77,10 +91,32 @@ impl QueryBuilder {
             None
         };
 
+        // --- ORDER BY + его параметры за один проход ---
+        let (order_by_opt, order_params): (Option<OrderBy>, Vec<Param>) =
+            if self.order_by_items.is_empty() {
+                (None, Vec::new())
+            } else {
+                let mut exprs: Vec<OrderByExpr> = Vec::with_capacity(self.order_by_items.len());
+                let mut ob_params: Vec<Param> = Vec::new();
+                for node in self.order_by_items.drain(..) {
+                    exprs.push(node.expr);
+                    if !node.params.is_empty() {
+                        ob_params.extend(node.params.into_iter());
+                    }
+                }
+                (
+                    Some(OrderBy {
+                        kind: OrderByKind::Expressions(exprs),
+                        interpolate: None,
+                    }),
+                    ob_params,
+                )
+            };
+
         let select = Select {
             distinct: distinct_opt,
             top: None,
-            projection: projection.into_vec(),
+            projection,
             into: None,
             from,
             lateral_views: vec![],
@@ -102,25 +138,13 @@ impl QueryBuilder {
             select_token: AttachedToken::empty(),
         };
 
-        let order_by_opt = if self.order_by_items.is_empty() {
-            None
-        } else {
-            let exprs: Vec<OrderByExpr> =
-                self.order_by_items.iter().map(|n| n.expr.clone()).collect();
-            Some(OrderBy {
-                kind: OrderByKind::Expressions(exprs),
-                interpolate: None,
-            })
-        };
-
         let mut body = SetExpr::Select(Box::new(select));
 
-        // Последовательно навешиваем UNION / UNION ALL справа налево, аккумулируя параметры
+        // set-ops: без промежуточного Vec
         if !self.set_ops.is_empty() {
-            for node in self.set_ops.into_vec() {
-                // порядок параметров: сначала то, что уже накоплено, затем RHS текущего set-op
+            for node in self.set_ops.drain(..) {
                 if !node.params.is_empty() {
-                    params.extend(node.params.into_vec());
+                    params.extend(node.params.into_iter());
                 }
                 body = SetExpr::SetOperation {
                     op: node.op,
@@ -150,24 +174,21 @@ impl QueryBuilder {
             )));
         }
 
+        // WHERE/HAVING params в конец
         if let Some(node) = self.where_clause.take() {
-            params.extend(node.params.into_vec());
-        }
-
-        if let Some(node) = self.having_clause.take() {
-            params.extend(node.params.into_vec());
-        }
-
-        for node in self.order_by_items.drain(..) {
-            params.extend(node.params.into_vec());
-        }
-
-        for node in self.select_items.drain(..) {
             if !node.params.is_empty() {
-                params.extend(node.params.into_vec());
+                params.extend(node.params.into_iter());
+            }
+        }
+        if let Some(node) = self.having_clause.take() {
+            if !node.params.is_empty() {
+                params.extend(node.params.into_iter());
             }
         }
 
+        // ORDER BY уже собран (order_params), SELECT-параметры тоже
+        params.extend(order_params);
+        params.extend(select_params);
         params.extend(group_params);
 
         Ok((query, params))
@@ -275,9 +296,9 @@ impl QueryBuilder {
                 }),
                 FromItem::Subquery(qb) => {
                     let alias = qb.alias.clone();
-                    let (q, mut p) = qb.build_query_ast()?;
+                    let (q, p) = qb.build_query_ast()?;
                     if !p.is_empty() {
-                        params.append(&mut p);
+                        params.extend(p);
                     }
                     from.push(TableWithJoins {
                         joins: joins_vec,
@@ -294,9 +315,9 @@ impl QueryBuilder {
                 FromItem::SubqueryClosure(closure) => {
                     let built = closure.apply(QueryBuilder::new_empty());
                     let alias = built.alias.clone();
-                    let (q, mut p) = built.build_query_ast()?;
+                    let (q, p) = built.build_query_ast()?;
                     if !p.is_empty() {
-                        params.append(&mut p);
+                        params.extend(p);
                     }
                     from.push(TableWithJoins {
                         joins: joins_vec,
@@ -529,11 +550,11 @@ impl InsertBuilder {
         let mut params: Vec<Param> = Vec::new();
         for r in self.rows {
             if !r.params.is_empty() {
-                params.extend(r.params.into_iter());
+                params.extend(r.params);
             }
         }
         if !self.params.is_empty() {
-            params.extend(self.params.into_iter());
+            params.extend(self.params);
         }
 
         Ok((S::Statement::Insert(insert), params))
@@ -701,7 +722,6 @@ impl DeleteBuilder {
         let using = if self.using_items.is_empty() {
             None
         } else {
-            let mut params = Vec::<Param>::new(); // на случай будущих подзапросов
             let mut list: Vec<S::TableWithJoins> = Vec::with_capacity(self.using_items.len());
             for it in self.using_items {
                 match it {
@@ -730,8 +750,6 @@ impl DeleteBuilder {
                     }
                 }
             }
-            // params (если появятся) можно будет добавить к self.params
-            drop(params);
             Some(list)
         };
 

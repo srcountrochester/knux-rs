@@ -46,27 +46,8 @@ impl DeleteBuilder {
     {
         let args = items.into_vec();
         self.using_items.reserve(args.len());
-
         for arg in args {
-            match arg {
-                // Имя таблицы из Expr (col/ident/строка)
-                QBArg::Expr(e) => {
-                    let mut p = e.params;
-                    if !p.is_empty() {
-                        self.params.append(&mut p);
-                    }
-                    if let Some(name) = expr_to_object_name(e.expr, self.default_schema.as_deref())
-                    {
-                        self.using_items.push(FromItem::TableName(name));
-                    } else {
-                        self.push_builder_error("using(): invalid table reference");
-                    }
-                }
-                // Подзапрос: поддержка в будущем (пока запретим — как и в update.from())
-                QBArg::Subquery(_) | QBArg::Closure(_) => {
-                    self.push_builder_error("using(): subqueries are not supported yet");
-                }
-            }
+            self.push_using_item(arg);
         }
         self
     }
@@ -121,18 +102,17 @@ impl DeleteBuilder {
     // ===== helpers =====
 
     #[inline]
-    fn attach_where_with_and(&mut self, expr: SqlExpr, mut params: SmallVec<[Param; 8]>) {
-        if let Some(prev) = self.where_predicate.take() {
-            self.where_predicate = Some(SqlExpr::BinaryOp {
+    fn attach_where_with_and(&mut self, expr: SqlExpr, params: SmallVec<[Param; 8]>) {
+        self.where_predicate = Some(match self.where_predicate.take() {
+            Some(prev) => SqlExpr::BinaryOp {
                 left: Box::new(prev),
                 op: sqlparser::ast::BinaryOperator::And,
                 right: Box::new(expr),
-            });
-        } else {
-            self.where_predicate = Some(expr);
-        }
+            },
+            None => expr,
+        });
         if !params.is_empty() {
-            self.params.extend(params.drain(..));
+            self.params.extend(params);
         }
     }
 
@@ -149,39 +129,56 @@ impl DeleteBuilder {
             return Ok(None);
         }
 
-        let mut exprs: SmallVec<[SqlExpr; 4]> = SmallVec::with_capacity(items.len());
+        let mut acc: Option<SqlExpr> = None;
         let mut params: SmallVec<[Param; 8]> = SmallVec::new();
 
         for it in items {
             match it.resolve_into_expr_with(|qb| qb.build_query_ast()) {
                 Ok((e, p)) => {
-                    exprs.push(e);
                     if !p.is_empty() {
                         params.extend(p);
                     }
+                    acc = Some(match acc {
+                        Some(prev) => SqlExpr::BinaryOp {
+                            left: Box::new(prev),
+                            op: sqlparser::ast::BinaryOperator::And,
+                            right: Box::new(e),
+                        },
+                        None => e,
+                    });
                 }
                 Err(e) => return Err(format!("where(): {e}").into()),
             }
         }
 
-        // Склеиваем через AND
-        let mut it = exprs.into_iter();
-        let Some(mut acc) = it.next() else {
-            return Ok(None);
-        };
-        for e in it {
-            acc = SqlExpr::BinaryOp {
-                left: Box::new(acc),
-                op: sqlparser::ast::BinaryOperator::And,
-                right: Box::new(e),
-            };
-        }
-        Ok(Some((acc, params)))
+        Ok(acc.map(|e| (e, params)))
     }
 
     #[inline]
     pub(crate) fn push_builder_error<S: Into<std::borrow::Cow<'static, str>>>(&mut self, msg: S) {
         self.builder_errors.push(msg.into());
+    }
+
+    #[inline]
+    fn push_using_item(&mut self, arg: QBArg) {
+        match arg {
+            // Имя таблицы из Expr (col/ident/строка)
+            QBArg::Expr(e) => {
+                let mut p = e.params;
+                if !p.is_empty() {
+                    self.params.append(&mut p);
+                }
+                if let Some(name) = expr_to_object_name(e.expr, self.default_schema.as_deref()) {
+                    self.using_items.push(FromItem::TableName(name));
+                } else {
+                    self.push_builder_error("using(): invalid table reference");
+                }
+            }
+            // Подзапросы пока не поддерживаем (как и в update.from())
+            QBArg::Subquery(_) | QBArg::Closure(_) => {
+                self.push_builder_error("using(): subqueries are not supported yet");
+            }
+        }
     }
 }
 
@@ -193,7 +190,7 @@ impl QueryBuilder {
     {
         let mut b = DeleteBuilder::from_qb(self);
 
-        let mut args = table_arg.into_vec();
+        let args = table_arg.into_vec();
         if args.is_empty() {
             b.push_builder_error("delete(): table is not set");
             return b;
@@ -203,7 +200,8 @@ impl QueryBuilder {
         }
 
         // Берём первый аргумент и пробуем интерпретировать как имя таблицы
-        match args.swap_remove(0).try_into_expr() {
+        let first = args.into_iter().next().unwrap(); // safe: уже проверили is_empty()
+        match first.try_into_expr() {
             Ok((expr, _params)) => {
                 if let Some(obj) = expr_to_object_name(expr, b.default_schema.as_deref()) {
                     b.table = Some(obj);

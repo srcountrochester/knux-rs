@@ -27,11 +27,12 @@ fn render_table_ref(w: &mut SqlWriter, t: &R::TableRef, cfg: &SqlRenderCfg) {
             }
             w.push(&quote_ident(name, cfg));
             if let Some(a) = alias {
-                if cfg.emit_as_for_table_alias {
-                    w.push(" AS ");
+                // избегаем лишнего ветвления в вызывающем коде
+                w.push(if cfg.emit_as_for_table_alias {
+                    " AS "
                 } else {
-                    w.push(" ");
-                }
+                    " "
+                });
                 w.push(&quote_ident(a, cfg));
             }
         }
@@ -45,6 +46,12 @@ fn render_returning(w: &mut SqlWriter, items: &[R::SelectItem], cfg: &SqlRenderC
         return;
     }
     w.push(" RETURNING ");
+    let sep_as = if cfg.emit_as_for_column_alias {
+        " AS "
+    } else {
+        " "
+    };
+
     for (i, it) in items.iter().enumerate() {
         if i > 0 {
             w.push(", ");
@@ -58,11 +65,7 @@ fn render_returning(w: &mut SqlWriter, items: &[R::SelectItem], cfg: &SqlRenderC
             R::SelectItem::Expr { expr, alias } => {
                 render_expr(w, expr, cfg);
                 if let Some(a) = alias {
-                    if cfg.emit_as_for_column_alias {
-                        w.push(" AS ");
-                    } else {
-                        w.push(" ");
-                    }
+                    w.push(sep_as);
                     w.push(&quote_ident(a, cfg));
                 }
             }
@@ -70,28 +73,34 @@ fn render_returning(w: &mut SqlWriter, items: &[R::SelectItem], cfg: &SqlRenderC
     }
 }
 
-/// Рендер `UPDATE ... SET ... [WHERE ...] [RETURNING ...]`
+/// Рендер `UPDATE ... SET ... [FROM ...] [WHERE ...] [RETURNING ...]`
 pub fn render_update(u: &R::Update, cfg: &SqlRenderCfg, cap: usize) -> String {
     let mut w = SqlWriter::new(cap, cfg.placeholders);
 
+    // Предвычисляем флаги возможностей диалектов
+    let supports_from = matches!(cfg.dialect, Dialect::Postgres | Dialect::SQLite);
+    let supports_returning = supports_from; // те же диалекты
+    let is_sqlite = matches!(cfg.dialect, Dialect::SQLite);
+
     // Префикс
-    match cfg.dialect {
-        Dialect::SQLite => {
-            w.push("UPDATE");
-            if let Some(or_) = &u.sqlite_or {
-                w.push(" OR ");
-                match or_ {
-                    R::SqliteOr::Replace => w.push("REPLACE"),
-                    R::SqliteOr::Ignore => w.push("IGNORE"),
-                }
+    if is_sqlite {
+        w.push("UPDATE");
+        if let Some(or_) = &u.sqlite_or {
+            w.push(" OR ");
+            match or_ {
+                R::SqliteOr::Replace => w.push("REPLACE"),
+                R::SqliteOr::Ignore => w.push("IGNORE"),
             }
-            w.push(" ");
         }
-        _ => w.push("UPDATE "),
+        w.push(" ");
+    } else {
+        w.push("UPDATE ");
     }
 
+    // Целевая таблица
     render_table_ref(&mut w, &u.table, cfg);
 
+    // SET
     w.push(" SET ");
     push_joined(&mut w, &u.set, |w, a| {
         w.push(&quote_ident(&a.col, cfg));
@@ -100,27 +109,20 @@ pub fn render_update(u: &R::Update, cfg: &SqlRenderCfg, cap: usize) -> String {
     });
 
     // FROM (PG/SQLite)
-    match cfg.dialect {
-        Dialect::Postgres | Dialect::SQLite => {
-            if !u.from.is_empty() {
-                w.push(" FROM ");
-                push_joined(&mut w, &u.from, |w, t| render_table_ref(w, t, cfg));
-            }
-        }
-        _ => {}
+    if supports_from && !u.from.is_empty() {
+        w.push(" FROM ");
+        push_joined(&mut w, &u.from, |w, t| render_table_ref(w, t, cfg));
     }
 
+    // WHERE
     if let Some(pred) = &u.r#where {
         w.push(" WHERE ");
         render_expr(&mut w, pred, cfg);
     }
 
-    match cfg.dialect {
-        Dialect::Postgres | Dialect::SQLite => {
-            render_returning(&mut w, &u.returning, cfg);
-        }
-        Dialect::MySQL => { /* MySQL: RETURNING не печатаем */ }
-        _ => {}
+    // RETURNING (PG/SQLite)
+    if supports_returning {
+        render_returning(&mut w, &u.returning, cfg);
     }
 
     w.finish()

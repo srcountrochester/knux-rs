@@ -4,48 +4,36 @@ use crate::renderer::select::render_expr;
 use crate::renderer::{Dialect, SqlRenderCfg, SqlWriter};
 
 /// Рендер `INSERT` с учётом диалектов.
-///
-/// Параметры возвращаем в порядке:
-///   1) все params значений `VALUES` (построчно слева направо),
-///   2) затем params из `merge()` (RHS выражения).
 pub fn render_insert(i: &R::Insert, cfg: &SqlRenderCfg, cap: usize) -> String {
     let mut w = SqlWriter::new(cap, cfg.placeholders);
 
     // 1) Префикс
+    let sqlite_ignore_without_action = matches!(cfg.dialect, Dialect::SQLite)
+        && i.ignore
+        && i.on_conflict
+            .as_ref()
+            .and_then(|c| c.action.as_ref())
+            .is_none();
+
     match cfg.dialect {
-        Dialect::SQLite => {
-            if i.ignore
-                && i.on_conflict
-                    .as_ref()
-                    .and_then(|c| c.action.as_ref())
-                    .is_none()
-            {
-                w.push("INSERT OR IGNORE INTO ");
-            } else {
-                w.push("INSERT INTO ");
-            }
-        }
-        Dialect::MySQL => {
-            if i.ignore {
-                w.push("INSERT IGNORE INTO ");
-            } else {
-                w.push("INSERT INTO ");
-            }
-        }
+        Dialect::SQLite if sqlite_ignore_without_action => w.push("INSERT OR IGNORE INTO "),
+        Dialect::MySQL if i.ignore => w.push("INSERT IGNORE INTO "),
         _ => w.push("INSERT INTO "),
     }
 
     // 2) Таблица и колонки
     render_table_ref(&mut w, &i.table, cfg);
+
+    // В MySQL для ON DUPLICATE KEY UPDATE понадобятся ссылки на "new.col"
     let need_alias_new = matches!(cfg.dialect, Dialect::MySQL)
         && i.on_conflict.as_ref().map_or(false, |c| {
             matches!(c.action, Some(R::OnConflictAction::DoUpdate { .. }))
         });
-
     if need_alias_new {
         w.push(" AS ");
-        w.push(&quote_ident("new", cfg)); // в MySQL даст `new`
+        w.push(&quote_ident("new", cfg)); // → `new`
     }
+
     render_columns(&mut w, &i.columns, cfg);
 
     // 3) VALUES
@@ -106,23 +94,14 @@ pub fn render_insert(i: &R::Insert, cfg: &SqlRenderCfg, cap: usize) -> String {
                         where_predicate,
                     }) => {
                         w.push(" DO UPDATE SET ");
-                        for (s, a) in set.iter().enumerate() {
-                            if s > 0 {
-                                w.push(", ");
-                            }
-                            w.push(&quote_ident(&a.col, cfg));
-                            w.push(" = ");
-                            if a.from_inserted {
-                                w.push("EXCLUDED.");
-                                w.push(&quote_ident(&a.col, cfg));
-                            } else {
-                                render_expr(&mut w, &a.value, cfg);
-                            }
-                        }
-                        if let Some(pred) = where_predicate {
-                            w.push(" WHERE ");
-                            render_expr(&mut w, pred, cfg);
-                        }
+                        render_set_assignments_common(
+                            &mut w,
+                            set,
+                            where_predicate.as_ref(),
+                            cfg,
+                            "EXCLUDED.",
+                            " WHERE ",
+                        );
                     }
                 }
             }
@@ -150,7 +129,7 @@ pub fn render_insert(i: &R::Insert, cfg: &SqlRenderCfg, cap: usize) -> String {
             // RETURNING в MySQL не печатаем
         }
 
-        _ => { /* no-op */ }
+        _ => {}
     }
 
     w.finish()
@@ -191,19 +170,11 @@ fn render_columns(w: &mut SqlWriter, cols: &[String], cfg: &SqlRenderCfg) {
 #[inline]
 fn render_values(w: &mut SqlWriter, rows: &[Vec<R::Expr>], cfg: &SqlRenderCfg) {
     w.push(" VALUES ");
-    for (i, row) in rows.iter().enumerate() {
-        if i > 0 {
-            w.push(", ");
-        }
+    push_joined(w, rows, |w, row| {
         w.push("(");
-        for (j, e) in row.iter().enumerate() {
-            if j > 0 {
-                w.push(", ");
-            }
-            render_expr(w, e, cfg);
-        }
+        push_joined(w, row, |w, e| render_expr(w, e, cfg));
         w.push(")");
-    }
+    });
 }
 
 #[inline]
@@ -212,25 +183,20 @@ fn render_returning(w: &mut SqlWriter, items: &[R::SelectItem], cfg: &SqlRenderC
         return;
     }
     w.push(" RETURNING ");
-    for (i, it) in items.iter().enumerate() {
-        if i > 0 {
-            w.push(", ");
+    push_joined(w, items, |w, it| match it {
+        R::SelectItem::Star { .. } => w.push("*"),
+        R::SelectItem::QualifiedStar { table, .. } => {
+            w.push(&quote_ident(table, cfg));
+            w.push(".*");
         }
-        match it {
-            R::SelectItem::Star { .. } => w.push("*"),
-            R::SelectItem::QualifiedStar { table, .. } => {
-                w.push(&quote_ident(table, cfg));
-                w.push(".*");
-            }
-            R::SelectItem::Expr { expr, alias } => {
-                render_expr(w, expr, cfg);
-                if let Some(a) = alias {
-                    w.push(" AS ");
-                    w.push(&quote_ident(a, cfg));
-                }
+        R::SelectItem::Expr { expr, alias } => {
+            render_expr(w, expr, cfg);
+            if let Some(a) = alias {
+                w.push(" AS ");
+                w.push(&quote_ident(a, cfg));
             }
         }
-    }
+    });
 }
 
 /// Универсальный вывод списка через запятую
@@ -246,7 +212,7 @@ fn push_joined<T>(w: &mut SqlWriter, items: &[T], mut f: impl FnMut(&mut SqlWrit
 
 /// (a = b, c = d, ...) + опциональный WHERE/комментарий.
 /// `inserted_prefix`: "EXCLUDED." (PG/SQLite) или "new." (MySQL)
-/// `where_kw`: " WHERE " (PG/SQLite) или " /* WHERE */ " (MySQL — т.к. WHERE в ON DUPLICATE недопустим)
+/// `where_kw`: " WHERE " (PG/SQLite) или " /* WHERE */ " (MySQL)
 #[inline]
 fn render_set_assignments_common(
     w: &mut SqlWriter,

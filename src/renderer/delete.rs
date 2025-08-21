@@ -26,29 +26,14 @@ fn render_table_ref(w: &mut SqlWriter, t: &R::TableRef, cfg: &SqlRenderCfg) {
                 w.push(".");
             }
             w.push(&quote_ident(name, cfg));
-            if let Some(a) = alias {
-                if cfg.emit_as_for_table_alias {
-                    w.push(" AS ");
-                } else {
-                    w.push(" ");
-                }
-                w.push(&quote_ident(a, cfg));
-            }
+            push_table_alias(w, alias, cfg);
         }
         R::TableRef::Subquery { query, alias } => {
             w.push("(");
-            // query: &Box<R::Select> → нужен рендер селекта
-            let sub = render_select(query, cfg, 128);
+            let sub = render_select(query, cfg, 128); // оставляем как есть (без инвазивных правок select-рендера)
             w.push(&sub);
             w.push(")");
-            if let Some(a) = alias {
-                if cfg.emit_as_for_table_alias {
-                    w.push(" AS ");
-                } else {
-                    w.push(" ");
-                }
-                w.push(&quote_ident(a, cfg));
-            }
+            push_table_alias(w, alias, cfg);
         }
     }
 }
@@ -59,29 +44,24 @@ fn render_returning(w: &mut SqlWriter, items: &[R::SelectItem], cfg: &SqlRenderC
         return;
     }
     w.push(" RETURNING ");
-    for (i, it) in items.iter().enumerate() {
-        if i > 0 {
-            w.push(", ");
+    push_joined(w, items, |w, it| match it {
+        R::SelectItem::Star { .. } => w.push("*"),
+        R::SelectItem::QualifiedStar { table, .. } => {
+            w.push(&quote_ident(table, cfg));
+            w.push(".*");
         }
-        match it {
-            R::SelectItem::Star { .. } => w.push("*"),
-            R::SelectItem::QualifiedStar { table, .. } => {
-                w.push(&quote_ident(table, cfg));
-                w.push(".*");
-            }
-            R::SelectItem::Expr { expr, alias } => {
-                render_expr(w, expr, cfg);
-                if let Some(a) = alias {
-                    if cfg.emit_as_for_column_alias {
-                        w.push(" AS ");
-                    } else {
-                        w.push(" ");
-                    }
-                    w.push(&quote_ident(a, cfg));
+        R::SelectItem::Expr { expr, alias } => {
+            render_expr(w, expr, cfg);
+            if let Some(a) = alias {
+                if cfg.emit_as_for_column_alias {
+                    w.push(" AS ");
+                } else {
+                    w.push(" ");
                 }
+                w.push(&quote_ident(a, cfg));
             }
         }
-    }
+    });
 }
 
 /// Рендер `DELETE FROM ... [USING ...] [WHERE ...] [RETURNING ...]`
@@ -91,7 +71,6 @@ pub fn render_delete(d: &R::Delete, cfg: &SqlRenderCfg, cap: usize) -> String {
     w.push("DELETE FROM ");
     render_table_ref(&mut w, &d.table, cfg);
 
-    // USING — для PG и MySQL печатаем; для SQLite игнорируем
     if !d.using.is_empty() {
         w.push(" USING ");
         push_joined(&mut w, &d.using, |w, t| render_table_ref(w, t, cfg));
@@ -102,7 +81,6 @@ pub fn render_delete(d: &R::Delete, cfg: &SqlRenderCfg, cap: usize) -> String {
         render_expr(&mut w, pred, cfg);
     }
 
-    // RETURNING — PG/SQLite; в MySQL не печатаем
     match cfg.dialect {
         Dialect::Postgres | Dialect::SQLite => render_returning(&mut w, &d.returning, cfg),
         Dialect::MySQL => { /* ignore */ }
@@ -110,4 +88,16 @@ pub fn render_delete(d: &R::Delete, cfg: &SqlRenderCfg, cap: usize) -> String {
     }
 
     w.finish()
+}
+
+#[inline]
+fn push_table_alias(w: &mut SqlWriter, alias: &Option<String>, cfg: &SqlRenderCfg) {
+    if let Some(a) = alias {
+        if cfg.emit_as_for_table_alias {
+            w.push(" AS ");
+        } else {
+            w.push(" ");
+        }
+        w.push(&quote_ident(a, cfg));
+    }
 }

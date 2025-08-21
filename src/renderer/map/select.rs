@@ -1,10 +1,9 @@
-use super::utils::{literal_u64, map_expr, map_order_by, map_select_item, split_object_name};
+use super::utils::{map_expr, map_order_by, map_select_item};
 use crate::renderer::{ast as R, map::utils::map_table_factor_any};
 use sqlparser::ast::{
     self as S, Cte as SCte, CteAsMaterialized as SCteMat, Distinct, Expr as SExpr, Function,
     FunctionArg, FunctionArgExpr, FunctionArguments, GroupByExpr, GroupByWithModifier,
-    Join as SJoin, JoinOperator as SJoinKind, LimitClause, Query as SQuery, Select as SSelect,
-    SetExpr, TableFactor, With as SWith,
+    Join as SJoin, LimitClause, Query as SQuery, Select as SSelect, SetExpr, With as SWith,
 };
 
 // Query -> R::Query
@@ -12,39 +11,11 @@ pub fn map_to_render_query(q: &SQuery) -> R::Query {
     let body = map_query_body(&q.body);
     let order_by = q.order_by.as_ref().map(map_order_by).unwrap_or_default();
 
-    let mut limit = None;
-    let mut offset = None;
-    if let Some(lim_expr) = q.limit_clause.as_ref() {
-        match lim_expr {
-            LimitClause::LimitOffset {
-                limit: lim,
-                offset: off,
-                ..
-            } => {
-                if let Some(v) = off {
-                    if let Some(v) = literal_u64(&v.value) {
-                        offset = Some(v);
-                    }
-                }
-                if let Some(v) = lim {
-                    if let Some(v) = literal_u64(&v) {
-                        limit = Some(v);
-                    }
-                }
-            }
-            LimitClause::OffsetCommaLimit {
-                offset: off,
-                limit: lim,
-            } => {
-                if let Some(v) = literal_u64(off) {
-                    offset = Some(v);
-                }
-                if let Some(v) = literal_u64(lim) {
-                    limit = Some(v);
-                }
-            }
-        }
-    }
+    let (limit, offset) = q
+        .limit_clause
+        .as_ref()
+        .map(read_limit_offset)
+        .unwrap_or((None, None));
 
     let with = q.with.as_ref().map(map_with_clause);
 
@@ -69,55 +40,12 @@ pub fn map_query_body(se: &SetExpr) -> R::QueryBody {
             left,
             right,
         } => {
-            let base_op = match op {
+            let base = match op {
                 S::SetOperator::Union => R::SetOp::Union,
                 S::SetOperator::Intersect => R::SetOp::Intersect,
                 S::SetOperator::Except | S::SetOperator::Minus => R::SetOp::Except,
             };
-            let (op, by_name) = match (base_op, set_quantifier) {
-                (R::SetOp::Union, S::SetQuantifier::All) => (R::SetOp::UnionAll, false),
-                (R::SetOp::Union, S::SetQuantifier::Distinct) => (R::SetOp::Union, false),
-                (R::SetOp::Union, S::SetQuantifier::ByName) => (R::SetOp::Union, true),
-                (R::SetOp::Union, S::SetQuantifier::AllByName) => (R::SetOp::UnionAll, true),
-                (R::SetOp::Union, S::SetQuantifier::DistinctByName) => (R::SetOp::Union, true),
-                (R::SetOp::Union, S::SetQuantifier::None) => (R::SetOp::Union, false),
-
-                (R::SetOp::Intersect, S::SetQuantifier::All) => (R::SetOp::IntersectAll, false),
-                (R::SetOp::Intersect, S::SetQuantifier::Distinct) => (R::SetOp::Intersect, false),
-                (R::SetOp::Intersect, S::SetQuantifier::AllByName) => {
-                    (R::SetOp::IntersectAll, true)
-                }
-                (R::SetOp::Intersect, S::SetQuantifier::DistinctByName) => {
-                    (R::SetOp::Intersect, true)
-                }
-
-                (R::SetOp::Except, S::SetQuantifier::All) => (R::SetOp::ExceptAll, false),
-                (R::SetOp::Except, S::SetQuantifier::Distinct) => (R::SetOp::Except, false),
-                (R::SetOp::Except, S::SetQuantifier::AllByName) => (R::SetOp::ExceptAll, true),
-                (R::SetOp::Except, S::SetQuantifier::DistinctByName) => (R::SetOp::Except, true),
-
-                (o @ R::SetOp::Intersect, S::SetQuantifier::ByName) => (o, true),
-                (o @ R::SetOp::Intersect, S::SetQuantifier::None) => (o, false),
-                (o @ R::SetOp::IntersectAll, S::SetQuantifier::All) => (o, false),
-                (o @ R::SetOp::IntersectAll, S::SetQuantifier::Distinct) => (o, false),
-                (o @ R::SetOp::IntersectAll, S::SetQuantifier::ByName) => (o, true),
-                (o @ R::SetOp::IntersectAll, S::SetQuantifier::AllByName) => (o, true),
-                (o @ R::SetOp::IntersectAll, S::SetQuantifier::DistinctByName) => (o, true),
-                (o @ R::SetOp::IntersectAll, S::SetQuantifier::None) => (o, false),
-
-                (o @ R::SetOp::Except, S::SetQuantifier::ByName) => (o, true),
-                (o @ R::SetOp::Except, S::SetQuantifier::None) => (o, false),
-                (o @ R::SetOp::ExceptAll, S::SetQuantifier::All) => (o, false),
-                (o @ R::SetOp::ExceptAll, S::SetQuantifier::Distinct) => (o, false),
-                (o @ R::SetOp::ExceptAll, S::SetQuantifier::ByName) => (o, true),
-                (o @ R::SetOp::ExceptAll, S::SetQuantifier::AllByName) => (o, true),
-                (o @ R::SetOp::ExceptAll, S::SetQuantifier::DistinctByName) => (o, true),
-                (o @ R::SetOp::ExceptAll, S::SetQuantifier::None) => (o, false),
-
-                (o @ R::SetOp::UnionAll, _) => {
-                    (o, matches!(set_quantifier, S::SetQuantifier::AllByName))
-                }
-            };
+            let (op, by_name) = map_set_quantifier(base, set_quantifier);
 
             R::QueryBody::Set {
                 left: Box::new(map_query_body(left)),
@@ -192,30 +120,10 @@ pub fn map_to_render_ast(q: &SQuery) -> R::Select {
     if let Some(ob) = q.order_by.as_ref() {
         rsel.order_by = map_order_by(ob);
     }
-
-    if let Some(lim_expr) = q.limit_clause.as_ref() {
-        match lim_expr {
-            LimitClause::LimitOffset { limit, offset, .. } => {
-                if let Some(v) = offset {
-                    if let Some(v) = literal_u64(&v.value) {
-                        rsel.offset = Some(v);
-                    }
-                }
-                if let Some(v) = limit {
-                    if let Some(v) = literal_u64(&v) {
-                        rsel.limit = Some(v);
-                    }
-                }
-            }
-            LimitClause::OffsetCommaLimit { offset, limit } => {
-                if let Some(v) = literal_u64(offset) {
-                    rsel.offset = Some(v);
-                }
-                if let Some(v) = literal_u64(limit) {
-                    rsel.limit = Some(v);
-                }
-            }
-        }
+    if let Some(lc) = q.limit_clause.as_ref() {
+        let (lim, off) = read_limit_offset(lc);
+        rsel.limit = lim;
+        rsel.offset = off;
     }
 
     rsel
@@ -223,7 +131,11 @@ pub fn map_to_render_ast(q: &SQuery) -> R::Select {
 
 fn map_select_to_render_ast(sel: &SSelect) -> R::Select {
     let mut from_named: Option<R::TableRef> = None;
-    let mut joins: Vec<R::Join> = Vec::new();
+
+    // capacity для joins: (число дополнительных FROM) + сумма явных joins
+    let crosses = sel.from.iter().skip(1).count();
+    let explicit: usize = sel.from.iter().map(|twj| twj.joins.len()).sum();
+    let mut joins: Vec<R::Join> = Vec::with_capacity(crosses + explicit);
 
     for twj in &sel.from {
         if from_named.is_none() {
@@ -244,7 +156,21 @@ fn map_select_to_render_ast(sel: &SSelect) -> R::Select {
     let (distinct_flag, distinct_on): (bool, Vec<R::Expr>) = match &sel.distinct {
         None => (false, vec![]),
         Some(Distinct::Distinct) => (true, vec![]),
-        Some(Distinct::On(exprs)) => (false, exprs.iter().map(map_expr).collect()),
+        Some(Distinct::On(exprs)) => {
+            let mut v = Vec::with_capacity(exprs.len());
+            for e in exprs {
+                v.push(map_expr(e));
+            }
+            (false, v)
+        }
+    };
+
+    let items = {
+        let mut v = Vec::with_capacity(sel.projection.len());
+        for it in &sel.projection {
+            v.push(map_select_item(it));
+        }
+        v
     };
 
     let (group_by_vec, group_by_mods) = map_group_by(sel);
@@ -252,7 +178,7 @@ fn map_select_to_render_ast(sel: &SSelect) -> R::Select {
     R::Select {
         distinct: distinct_flag,
         distinct_on,
-        items: sel.projection.iter().map(map_select_item).collect(),
+        items,
         from: from_named,
         joins,
         r#where: sel.selection.as_ref().map(map_expr),
@@ -269,13 +195,13 @@ fn map_group_by(sel: &SSelect) -> (Vec<R::Expr>, Vec<R::GroupByModifier>) {
     match &sel.group_by {
         GroupByExpr::All(_) => (Vec::new(), Vec::new()),
         GroupByExpr::Expressions(exprs, items) => {
-            let mut out_exprs = Vec::<R::Expr>::new();
-            let mut out_mods = Vec::<R::GroupByModifier>::new();
+            let mut out_exprs = Vec::<R::Expr>::with_capacity(exprs.len());
+            let mut out_mods = Vec::<R::GroupByModifier>::with_capacity(items.len());
 
             for e in exprs {
+                // те же кейсы, что и было
+                #[allow(unreachable_patterns)]
                 match e {
-                    // ROLLUP/CUBE/GROUPING SETS
-                    #[allow(unreachable_patterns)]
                     SExpr::Rollup(groups) => {
                         out_mods.push(R::GroupByModifier::Rollup);
                         for grp in groups {
@@ -284,7 +210,6 @@ fn map_group_by(sel: &SSelect) -> (Vec<R::Expr>, Vec<R::GroupByModifier>) {
                             }
                         }
                     }
-                    #[allow(unreachable_patterns)]
                     SExpr::Cube(groups) => {
                         out_mods.push(R::GroupByModifier::Cube);
                         for grp in groups {
@@ -293,7 +218,6 @@ fn map_group_by(sel: &SSelect) -> (Vec<R::Expr>, Vec<R::GroupByModifier>) {
                             }
                         }
                     }
-                    #[allow(unreachable_patterns)]
                     SExpr::GroupingSets(groups) => {
                         let gs_expr = R::Expr::FuncCall {
                             name: "GROUPING SETS".into(),
@@ -312,8 +236,6 @@ fn map_group_by(sel: &SSelect) -> (Vec<R::Expr>, Vec<R::GroupByModifier>) {
                             }
                         }
                     }
-
-                    // ROLLUP/CUBE как функция
                     SExpr::Function(Function { name, args, .. })
                         if name.to_string().eq_ignore_ascii_case("ROLLUP") =>
                     {
@@ -338,7 +260,6 @@ fn map_group_by(sel: &SSelect) -> (Vec<R::Expr>, Vec<R::GroupByModifier>) {
                             }
                         }
                     }
-
                     _ => out_exprs.push(map_expr(e)),
                 }
             }
@@ -361,27 +282,45 @@ fn map_group_by(sel: &SSelect) -> (Vec<R::Expr>, Vec<R::GroupByModifier>) {
 
 fn map_join(j: &SJoin) -> R::Join {
     use R::JoinKind as JK;
-    let (nat, constraint_opt) = match &j.join_operator {
-        SJoinKind::Inner(c) => (false, Some(c)),
-        SJoinKind::LeftOuter(c) => (false, Some(c)),
-        SJoinKind::RightOuter(c) => (false, Some(c)),
-        SJoinKind::FullOuter(c) => (false, Some(c)),
-        SJoinKind::CrossJoin => (false, None),
-        SJoinKind::CrossApply => (false, None),
-        SJoinKind::OuterApply => (false, None),
-        SJoinKind::Join(S::JoinConstraint::Natural) => (true, None),
-        SJoinKind::Join(c) => (false, Some(c)),
-        _ => (false, None),
-    };
+    use sqlparser::ast::{JoinConstraint as JC, JoinOperator as JO};
 
-    let mut kind = match j.join_operator {
-        SJoinKind::Inner(_) | SJoinKind::Join(_) => JK::Inner,
-        SJoinKind::LeftOuter(_) => JK::Left,
-        SJoinKind::RightOuter(_) => JK::Right,
-        SJoinKind::FullOuter(_) => JK::Full,
-        SJoinKind::CrossJoin | SJoinKind::CrossApply => JK::Cross,
-        SJoinKind::OuterApply => JK::Left,
-        _ => JK::Inner,
+    #[inline]
+    fn is_natural(c: &JC) -> bool {
+        matches!(c, JC::Natural)
+    }
+    #[inline]
+    fn non_natural<'a>(c: &'a JC) -> Option<&'a JC> {
+        if is_natural(c) { None } else { Some(c) }
+    }
+
+    // Вид JOIN + NATURAL + (возможное) ограничение (без NATURAL)
+    let (mut kind, nat, constraint_opt): (JK, bool, Option<&JC>) = match &j.join_operator {
+        JO::Join(c) | JO::Inner(c) => (JK::Inner, is_natural(c), non_natural(c)),
+
+        JO::Left(c) | JO::LeftOuter(c) => (JK::Left, is_natural(c), non_natural(c)),
+        JO::Right(c) | JO::RightOuter(c) => (JK::Right, is_natural(c), non_natural(c)),
+        JO::FullOuter(c) => (JK::Full, is_natural(c), non_natural(c)),
+
+        // Полу-/анти-джоины в нашей модели отсутствуют — понижаем до INNER.
+        JO::Semi(c)
+        | JO::LeftSemi(c)
+        | JO::RightSemi(c)
+        | JO::Anti(c)
+        | JO::LeftAnti(c)
+        | JO::RightAnti(c) => (JK::Inner, is_natural(c), non_natural(c)),
+
+        JO::CrossJoin | JO::CrossApply => (JK::Cross, false, None),
+        JO::OuterApply => (JK::Left, false, None),
+
+        // ASOF: нет специального JoinKind — понижаем до INNER.
+        // match_condition пойдёт в ON (внизу объединим с constraint через AND).
+        JO::AsOf {
+            match_condition: _,
+            constraint,
+        } => (JK::Inner, is_natural(constraint), non_natural(constraint)),
+
+        // STRAIGHT_JOIN: ведём как INNER, пробрасываем constraint (ON/USING), NATURAL игнорируем.
+        JO::StraightJoin(c) => (JK::Inner, is_natural(c), non_natural(c)),
     };
 
     if nat {
@@ -390,26 +329,63 @@ fn map_join(j: &SJoin) -> R::Join {
             JK::Left => JK::NaturalLeft,
             JK::Right => JK::NaturalRight,
             JK::Full => JK::NaturalFull,
-            _ => kind,
+            other => other,
         };
     }
 
-    let mut on = None;
-    let mut using_cols = None;
-    if let Some(c) = constraint_opt {
-        match c {
-            S::JoinConstraint::On(expr) => on = Some(map_expr(expr)),
-            S::JoinConstraint::Using(cols) => {
-                using_cols = Some(cols.iter().map(|i| i.to_string()).collect())
-            }
-            _ => {}
-        }
-    }
+    // Преобразуем constraint → (on, using)
+    let (on, using_cols) = match constraint_opt {
+        Some(JC::On(expr)) => (Some(map_expr(expr)), None),
+        Some(JC::Using(cols)) => (None, Some(cols.iter().map(|i| i.to_string()).collect())),
+        _ => (None, None),
+    };
 
     R::Join {
         kind,
-        table: map_table_factor_any(&j.relation),
+        table: crate::renderer::map::utils::map_table_factor_any(&j.relation),
         on,
         using_cols,
     }
+}
+
+#[inline]
+fn read_limit_offset(lc: &LimitClause) -> (Option<u64>, Option<u64>) {
+    match lc {
+        LimitClause::LimitOffset { limit, offset, .. } => {
+            let off = offset
+                .as_ref()
+                .and_then(|o| super::utils::literal_u64(&o.value));
+            let lim = limit.as_ref().and_then(|e| super::utils::literal_u64(e));
+            (lim, off)
+        }
+        LimitClause::OffsetCommaLimit { offset, limit } => (
+            super::utils::literal_u64(limit),
+            super::utils::literal_u64(offset),
+        ),
+    }
+}
+
+#[inline]
+fn map_set_quantifier(base: R::SetOp, q: &S::SetQuantifier) -> (R::SetOp, bool) {
+    let by_name = matches!(
+        q,
+        S::SetQuantifier::ByName | S::SetQuantifier::AllByName | S::SetQuantifier::DistinctByName
+    );
+    let op = match base {
+        R::SetOp::Union => match q {
+            S::SetQuantifier::All | S::SetQuantifier::AllByName => R::SetOp::UnionAll,
+            _ => R::SetOp::Union,
+        },
+        R::SetOp::Intersect => match q {
+            S::SetQuantifier::All | S::SetQuantifier::AllByName => R::SetOp::IntersectAll,
+            _ => R::SetOp::Intersect,
+        },
+        R::SetOp::Except => match q {
+            S::SetQuantifier::All | S::SetQuantifier::AllByName => R::SetOp::ExceptAll,
+            _ => R::SetOp::Except,
+        },
+        // сюда не попадём (base вычисляется только как Union/Intersect/Except)
+        o => o,
+    };
+    (op, by_name)
 }

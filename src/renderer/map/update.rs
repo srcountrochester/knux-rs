@@ -3,16 +3,16 @@ use crate::renderer::ast as R;
 use sqlparser::ast as S;
 
 pub(crate) fn map_update(stmt: &S::Statement) -> R::Update {
-    let (table_wj, assignments, selection, returning_opt, from_opt, or_opt) = match stmt {
-        S::Statement::Update {
-            table,
-            assignments,
-            selection,
-            returning,
-            from,
-            or,
-        } => (table, assignments, selection, returning, from, or),
-        _ => unreachable!("map_update called with non-UPDATE statement"),
+    let S::Statement::Update {
+        table: table_wj,
+        assignments,
+        selection,
+        returning: returning_opt,
+        from: from_opt,
+        or: or_opt,
+    } = stmt
+    else {
+        unreachable!("map_update called with non-UPDATE statement");
     };
 
     // target table
@@ -22,44 +22,46 @@ pub(crate) fn map_update(stmt: &S::Statement) -> R::Update {
     let table = map_table_factor_named(&table_wj.relation);
 
     // SET
-    let set = assignments
-        .iter()
-        .map(|a| {
-            let col = match &a.target {
-                S::AssignmentTarget::ColumnName(obj) => {
-                    obj.0.last().map(|p| p.to_string()).unwrap_or_default()
-                }
-                S::AssignmentTarget::Tuple(cols) => cols
-                    .last()
-                    .and_then(|o| o.0.last())
-                    .map(|p| p.to_string())
-                    .unwrap_or_default(),
-            };
-            R::Assign {
-                col,
-                value: super::utils::map_expr(&a.value),
-                from_inserted: false,
-            }
-        })
-        .collect::<Vec<_>>();
+    let mut set = Vec::with_capacity(assignments.len());
+    for a in assignments {
+        let col = match &a.target {
+            S::AssignmentTarget::ColumnName(obj) => last_part_to_string(&obj.0),
+            S::AssignmentTarget::Tuple(cols) => cols
+                .last()
+                .map(|o| last_part_to_string(&o.0))
+                .unwrap_or_default(),
+        };
+        set.push(R::Assign {
+            col,
+            value: map_expr(&a.value),
+            from_inserted: false,
+        });
+    }
 
     // WHERE
     let r#where = selection.as_ref().map(map_expr);
 
     // RETURNING
-    let returning = returning_opt
-        .as_ref()
-        .map(|v| v.iter().map(map_select_item).collect())
-        .unwrap_or_default();
+    let returning = if let Some(v) = returning_opt.as_ref() {
+        let mut out = Vec::with_capacity(v.len());
+        out.extend(v.iter().map(map_select_item));
+        out
+    } else {
+        Vec::new()
+    };
 
-    // FROM
-    let from = match from_opt {
-        Some(S::UpdateTableFromKind::BeforeSet(list))
-        | Some(S::UpdateTableFromKind::AfterSet(list)) => list
-            .iter()
-            .map(|twj| map_table_factor_named(&twj.relation))
-            .collect(),
-        None => Vec::new(),
+    // FROM (BeforeSet / AfterSet — одинаково маппим список)
+    let from = if let Some(kind) = from_opt {
+        let list = match kind {
+            S::UpdateTableFromKind::BeforeSet(l) | S::UpdateTableFromKind::AfterSet(l) => l,
+        };
+        let mut out = Vec::with_capacity(list.len());
+        for twj in list {
+            out.push(map_table_factor_named(&twj.relation));
+        }
+        out
+    } else {
+        Vec::new()
     };
 
     // SQLite OR
@@ -76,5 +78,14 @@ pub(crate) fn map_update(stmt: &S::Statement) -> R::Update {
         returning,
         from,
         sqlite_or,
+    }
+}
+
+#[inline]
+fn last_part_to_string(parts: &[S::ObjectNamePart]) -> String {
+    match parts.last() {
+        Some(S::ObjectNamePart::Identifier(id)) => id.value.clone(),
+        Some(other) => other.to_string(),
+        None => String::new(),
     }
 }

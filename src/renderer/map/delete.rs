@@ -3,42 +3,34 @@ use crate::renderer::ast as R;
 use sqlparser::ast as S;
 
 pub(crate) fn map_delete(d: &S::Delete) -> R::Delete {
-    // target table: FROM
+    // target table (оба варианта FROM обрабатываем одной веткой)
     let table = match &d.from {
-        // DELETE FROM <...>  (с ключевым словом FROM)
-        S::FromTable::WithFromKeyword(list) => {
-            let twj = list.first().expect("DELETE FROM must have a table");
-            map_table_factor_named(&twj.relation)
-        }
-        // DELETE <...>  (без ключевого слова FROM)
-        S::FromTable::WithoutKeyword(list) => {
-            let twj = list
-                .first()
-                .expect("DELETE (without FROM) must have a table");
+        S::FromTable::WithFromKeyword(list) | S::FromTable::WithoutKeyword(list) => {
+            let twj = list.first().expect("DELETE must have a target table");
             map_table_factor_named(&twj.relation)
         }
     };
 
-    // USING (если есть)
-    let using = d
-        .using
-        .as_ref()
-        .map(|list| {
-            list.iter()
-                .map(|twj| map_table_factor_named(&twj.relation))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    // USING (c предвыделением ёмкости)
+    let using = d.using.as_ref().map_or_else(Vec::new, |list| {
+        let mut v = Vec::with_capacity(list.len());
+        for twj in list {
+            v.push(map_table_factor_named(&twj.relation));
+        }
+        v
+    });
 
     // WHERE
     let r#where = d.selection.as_ref().map(map_expr);
 
-    // RETURNING
-    let returning = d
-        .returning
-        .as_ref()
-        .map(|v| v.iter().map(map_select_item).collect())
-        .unwrap_or_default();
+    // RETURNING (c предвыделением ёмкости)
+    let returning = d.returning.as_ref().map_or_else(Vec::new, |items| {
+        let mut v = Vec::with_capacity(items.len());
+        for it in items {
+            v.push(map_select_item(it));
+        }
+        v
+    });
 
     R::Delete {
         table,

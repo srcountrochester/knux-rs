@@ -6,86 +6,105 @@ use crate::renderer::{
 use sqlparser::ast as S;
 
 pub(crate) fn map_insert(i: &S::Insert) -> R::Insert {
+    // TARGET
     let table = map_table_object(&i.table);
-    let columns: Vec<String> = i.columns.iter().map(|id| id.value.clone()).collect();
 
-    let mut rows: Vec<Vec<R::Expr>> = Vec::new();
-    if let Some(q) = &i.source {
-        if let S::SetExpr::Values(S::Values { rows: vs, .. }) = q.body.as_ref() {
-            rows = Vec::with_capacity(vs.len());
-            for r in vs {
-                let mut row = Vec::with_capacity(r.len());
-                row.extend(r.iter().map(map_expr));
-                rows.push(row);
-            }
+    // COLUMNS (с предвыделением)
+    let columns = {
+        let mut v = Vec::with_capacity(i.columns.len());
+        for id in &i.columns {
+            v.push(id.value.clone());
         }
-    }
+        v
+    };
 
-    let returning: Vec<R::SelectItem> = i
-        .returning
-        .as_ref()
-        .map(|v| v.iter().map(map_select_item).collect())
-        .unwrap_or_default();
+    // VALUES (...) (без промежуточных collect/extend)
+    let rows = match i.source.as_deref().map(|q| q.body.as_ref()) {
+        Some(S::SetExpr::Values(S::Values { rows, .. })) => {
+            let mut out = Vec::with_capacity(rows.len());
+            for r in rows {
+                let mut row = Vec::with_capacity(r.len());
+                for e in r {
+                    row.push(map_expr(e));
+                }
+                out.push(row);
+            }
+            out
+        }
+        _ => Vec::new(),
+    };
+
+    // RETURNING (с предвыделением)
+    let returning = i.returning.as_ref().map_or_else(Vec::new, |v| {
+        let mut out = Vec::with_capacity(v.len());
+        for it in v {
+            out.push(map_select_item(it));
+        }
+        out
+    });
 
     let ignore = i.ignore;
 
-    let mut on_conflict: Option<R::OnConflict> = None;
-    if let Some(on) = &i.on {
-        match on {
-            // MySQL: ON DUPLICATE KEY UPDATE
-            S::OnInsert::DuplicateKeyUpdate(assignments) => {
-                let set = assignments.iter().map(map_assignment).collect::<Vec<_>>();
-                on_conflict = Some(R::OnConflict {
-                    target_columns: Vec::new(),
-                    on_constraint: None,
-                    action: Some(R::OnConflictAction::DoUpdate {
-                        set,
-                        where_predicate: None,
-                    }),
-                });
+    // ON CONFLICT / ON DUPLICATE (без промежуточного mutable on_conflict)
+    let on_conflict = i.on.as_ref().and_then(|on| match on {
+        // MySQL: ON DUPLICATE KEY UPDATE
+        S::OnInsert::DuplicateKeyUpdate(assignments) => {
+            let mut set = Vec::with_capacity(assignments.len());
+            for a in assignments {
+                set.push(map_assignment(a));
             }
+            Some(R::OnConflict {
+                target_columns: Vec::new(),
+                on_constraint: None,
+                action: Some(R::OnConflictAction::DoUpdate {
+                    set,
+                    where_predicate: None,
+                }),
+            })
+        }
 
-            // PG/SQLite: ON CONFLICT (...)
-            S::OnInsert::OnConflict(conf) => {
-                let (target_columns, on_constraint) = match &conf.conflict_target {
-                    Some(S::ConflictTarget::Columns(cols)) => {
-                        (cols.iter().map(|c| c.value.clone()).collect(), None)
+        // PG/SQLite: ON CONFLICT (...)
+        S::OnInsert::OnConflict(conf) => {
+            let (target_columns, on_constraint) = match &conf.conflict_target {
+                Some(S::ConflictTarget::Columns(cols)) => {
+                    let mut v = Vec::with_capacity(cols.len());
+                    for c in cols {
+                        v.push(c.value.clone());
                     }
-                    Some(S::ConflictTarget::OnConstraint(obj)) => {
-                        (Vec::new(), Some(object_name_join(obj, ".")))
-                    }
-                    None => (Vec::new(), None),
-                };
+                    (v, None)
+                }
+                Some(S::ConflictTarget::OnConstraint(obj)) => {
+                    (Vec::new(), Some(object_name_join(obj, ".")))
+                }
+                None => (Vec::new(), None),
+            };
 
-                match &conf.action {
-                    S::OnConflictAction::DoNothing => {
-                        on_conflict = Some(R::OnConflict {
-                            target_columns,
-                            on_constraint,
-                            action: Some(R::OnConflictAction::DoNothing),
-                        });
+            match &conf.action {
+                S::OnConflictAction::DoNothing => Some(R::OnConflict {
+                    target_columns,
+                    on_constraint,
+                    action: Some(R::OnConflictAction::DoNothing),
+                }),
+                S::OnConflictAction::DoUpdate(du) => {
+                    let mut set = Vec::with_capacity(du.assignments.len());
+                    for a in &du.assignments {
+                        set.push(map_assignment(a));
                     }
-                    S::OnConflictAction::DoUpdate(du) => {
-                        let set = du
-                            .assignments
-                            .iter()
-                            .map(map_assignment)
-                            .collect::<Vec<_>>();
-                        let where_predicate = du.selection.as_ref().map(map_expr);
-                        on_conflict = Some(R::OnConflict {
-                            target_columns,
-                            on_constraint,
-                            action: Some(R::OnConflictAction::DoUpdate {
-                                set,
-                                where_predicate,
-                            }),
-                        });
-                    }
+                    let where_predicate = du.selection.as_ref().map(map_expr);
+                    Some(R::OnConflict {
+                        target_columns,
+                        on_constraint,
+                        action: Some(R::OnConflictAction::DoUpdate {
+                            set,
+                            where_predicate,
+                        }),
+                    })
                 }
             }
-            _ => {}
         }
-    }
+
+        _ => None,
+    });
 
     R::Insert {
         table,
