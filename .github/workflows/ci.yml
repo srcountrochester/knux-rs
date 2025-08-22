@@ -22,7 +22,7 @@ jobs:
           - name: mysql
             args: "test --no-default-features --features mysql --verbose"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: clippy, rustfmt
@@ -34,7 +34,7 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: rustfmt
@@ -59,7 +59,7 @@ jobs:
           - name: mysql
             no_defaults: "--no-default-features --features mysql"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.100.0
         with: { components: clippy }
       - uses: Swatinem/rust-cache@v2
