@@ -7,8 +7,22 @@ on:
 jobs:
   deny:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            args: ""  
+          - name: sqlite
+            args: "--no-default-features --features sqlite"
+          - name: postgres
+            args: "--no-default-features --features postgres"
+          - name: mysql
+            args: "--no-default-features --features mysql"
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Run cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          rust-version: "1.89.0"             
+          command: check bans licenses sources
+          arguments: ${{ matrix.args }}       

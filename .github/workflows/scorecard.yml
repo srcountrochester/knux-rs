@@ -3,22 +3,31 @@ on:
   push: { branches: [master] }
   schedule: [{ cron: "30 1 * * 1" }]
 
-permissions:
-  contents: read
-  security-events: write
-  id-token: write
-
 jobs:
   analysis:
     runs-on: ubuntu-latest
+    # Разрешения только в этом job
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+      actions: read
+
     steps:
+      - uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@v4
-        with: { persist-credentials: false }
-      - uses: ossf/scorecard-action@v2.4.2
+        with:
+          persist-credentials: false
+
+      - uses: ossf/scorecard-action@05b42c624433fc40578a4040d5cf5e36ddca8cde
         with:
           results_file: results.sarif
           results_format: sarif
           publish_results: true
+
       - uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif

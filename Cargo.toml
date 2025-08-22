@@ -1,4 +1,5 @@
 [package]
+license = "MIT OR Apache-2.0"
 name = "krust"
 version = "0.1.0"
 edition = "2024"
@@ -11,6 +12,7 @@ default = ["sqlite"]
 sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]
 mysql = ["sqlx/mysql"]
+
 # Опциональные типы
 time = ["dep:time", "sqlx/time"]
 chrono = ["dep:chrono", "sqlx/chrono"]
@@ -24,7 +26,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "macros",
 ] }
 sqlparser = "0.58"
-thiserror = "2.0.14"
+thiserror = "2"
 url = "2"
 humantime = "2"
 smallvec = "1"

@@ -9,30 +9,57 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            args: "test --verbose"
+          - name: sqlite
+            args: "test --no-default-features --features sqlite --verbose"
+          - name: postgres
+            args: "test --no-default-features --features postgres --verbose"
+          - name: mysql
+            args: "test --no-default-features --features mysql --verbose"
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --all-targets --verbose
-      - name: Test
-        run: cargo test --all-features --verbose
+      - run: rustc -Vv && cargo -V
+      - name: Run ${{ matrix.name }}
+        run: cargo ${{ matrix.args }}
 
   fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with: { components: rustfmt }
+      - uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          components: rustfmt
       - name: rustfmt (check)
         run: cargo fmt --all -- --check
 
   clippy:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            args: "clippy --all-targets -- -D warnings"
+          - name: sqlite
+            args: "clippy --no-default-features --features sqlite -- -D warnings"
+          - name: postgres
+            args: "clippy --no-default-features --features postgres -- -D warnings"
+          - name: mysql
+            args: "clippy --no-default-features --features mysql -- -D warnings"
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with: { components: clippy }
+      - uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Clippy (deny warnings)
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Clippy ${{ matrix.name }}
+        run: cargo ${{ matrix.args }}
