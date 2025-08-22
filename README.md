@@ -2,6 +2,11 @@
 
 *Быстрый и удобный конструктор SQL-запросов для Rust с интерфейсом, вдохновлённым Knex.js.*
 
+[![CI](https://github.com/srcountrochester/krust/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/srcountrochester/krust/actions/workflows/ci.yml)
+![coverage](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/srcountrochester/krust/gh-pages/badges/coverage.json&query=$.coverage&suffix=%25&label=coverage)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/srcountrochester/krust/badge)](https://scorecard.dev/viewer/?uri=github.com/srcountrochester/krust)
+[![LOC](https://tokei.rs/b1/github/srcountrochester/krust?category=code)](https://tokei.rs/b1/github/srcountrochester/krust)
+
 ## Введение
 
 **Krust** – это библиотека для программного построения SQL-запросов в Rust, обеспечивающая удобный fluent-интерфейс, похожий на популярный JavaScript-пакет Knex. Цель проекта – упростить написание сложных SQL-выражений, сохраняя полный контроль над результирующим запросом и высокую производительность (без накладных расходов ORM). Krust **не является ORM** – он не управляет состоянием объектов и не привязан к моделям. Вы непосредственно конструируете текст SQL-запроса, а получение и обработка результатов остаются за вами (например, средствами **SQLx**). Такой подход даёт гибкость: вы пишете запросы, близкие к чистому SQL, но пользуетесь безопасным API для предотвращения SQL-инъекций и удобного комбинирования условий.

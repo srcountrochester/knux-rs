@@ -1,0 +1,14 @@
+name: cargo-deny
+on:
+  push: { branches: [master] }
+  pull_request: {}
+  schedule: [{ cron: "0 6 * * 1" }]
+
+jobs:
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2

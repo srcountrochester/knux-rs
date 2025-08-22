@@ -1,0 +1,24 @@
+name: Clippy (SARIF)
+on:
+  push: { branches: [master] }
+  pull_request: {}
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  clippy-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - name: Install clippy-sarif
+        run: cargo install clippy-sarif
+      - name: Run clippy (JSON) -> SARIF
+        run: cargo clippy --all-targets --all-features --message-format=json | clippy-sarif > clippy.sarif || true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: clippy.sarif
