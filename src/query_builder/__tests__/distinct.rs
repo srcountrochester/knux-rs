@@ -1,5 +1,6 @@
 use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
+use crate::tests::dialect_test_helpers::qi;
 
 /// Нормализатор для сравнения строк SQL (если у вас уже есть — используйте его)
 fn norm(s: &str) -> String {
@@ -37,9 +38,9 @@ fn distinct_with_columns_adds_projection_and_flag() {
         sql.starts_with("SELECT DISTINCT"),
         "expected SELECT DISTINCT..., got: {sql}"
     );
-    assert!(sql.contains("\"first_name\""));
-    assert!(sql.contains("\"last_name\""));
-    assert!(sql.contains("FROM \"users\""));
+    assert!(sql.contains(&qi("first_name")));
+    assert!(sql.contains(&qi("last_name")));
+    assert!(sql.contains(&format!("FROM {}", qi("users"))));
 }
 
 #[test]

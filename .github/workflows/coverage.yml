@@ -3,7 +3,9 @@ on:
   push: { branches: [master] }
   pull_request: {}
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   cov:
@@ -23,21 +25,19 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Generate lcov
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info --ignore-filename-regex '(^|/)(__tests__|examples|benches)/'
 
       - name: Make coverage.json
         run: |
           awk -F: '/^LF:/ {lf+=$2} /^LH:/ {lh+=$2} END {pct=(lf?lh/lf*100:0); printf("{\"coverage\": %.2f}\n", pct)}' lcov.info > coverage.json
 
-      - name: Publish JSON to gh-pages
-        if: github.ref == 'refs/heads/master'
-        run: |
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git fetch origin gh-pages || true
-          git checkout -B gh-pages
-          mkdir -p badges
-          mv coverage.json badges/coverage.json
-          git add badges/coverage.json
-          git commit -m "chore(badge): update coverage [skip ci]" || true
-          git push origin gh-pages
+      - name: Prepare artifact
+        run: mkdir -p public/badges && mv coverage.json public/badges/coverage.json
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

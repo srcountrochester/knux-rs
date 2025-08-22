@@ -10,6 +10,7 @@ fn assert_contains(haystack: &str, needle: &str) {
     );
 }
 
+#[cfg(not(feature = "mysql"))]
 #[test]
 fn pg_basic_single_row_with_returning_all() {
     let (sql, params) = QueryBuilder::new_empty()
@@ -55,6 +56,7 @@ fn pg_multi_rows_values_and_param_order() {
     assert_eq!(params.len(), 3, "3 значения ⇒ 3 параметра");
 }
 
+#[cfg(not(feature = "mysql"))]
 #[test]
 fn pg_on_conflict_do_nothing() {
     let (sql, _params) = QueryBuilder::new_empty()
@@ -71,6 +73,7 @@ fn pg_on_conflict_do_nothing() {
     assert_contains(&sql, "DO NOTHING");
 }
 
+#[cfg(not(feature = "mysql"))]
 #[test]
 fn pg_on_conflict_merge_columns_only_uses_excluded() {
     let (sql, _params) = QueryBuilder::new_empty()
@@ -89,6 +92,7 @@ fn pg_on_conflict_merge_columns_only_uses_excluded() {
     assert_contains(&sql, &format!("{} = EXCLUDED.{}", qi("age"), qi("age")));
 }
 
+#[cfg(not(feature = "mysql"))]
 #[test]
 fn pg_returning_all_from_qualified_star() {
     let (sql, _params) = QueryBuilder::new_empty()
@@ -103,6 +107,7 @@ fn pg_returning_all_from_qualified_star() {
     assert_contains(&sql, &format!("{}.*", qi("users")));
 }
 
+#[cfg(not(feature = "mysql"))]
 #[test]
 fn sqlite_insert_or_ignore_without_do_update() {
     let mut b = QueryBuilder::new_empty()
@@ -124,6 +129,7 @@ fn sqlite_insert_or_ignore_without_do_update() {
     );
 }
 
+#[cfg(not(feature = "mysql"))]
 #[test]
 fn sqlite_on_conflict_do_update_with_excluded() {
     let mut b = QueryBuilder::new_empty()

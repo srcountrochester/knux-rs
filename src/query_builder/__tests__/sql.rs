@@ -226,9 +226,9 @@ fn insert_into_with_default_schema() {
     );
 }
 
+#[cfg(not(feature = "mysql"))]
 #[test]
 fn insert_returning_is_emitted() {
-    // Для дефолтного диалекта (как правило, PG в тестах) должен быть RETURNING
     let (sql, _params) = QueryBuilder::new_empty()
         .into("t")
         .columns(("x",))
@@ -275,10 +275,22 @@ fn update_with_from_sources() {
     let sqln = norm(&sql);
     assert!(sqln.contains(&format!("UPDATE {}", qi("t"))), "got: {sql}");
     assert!(sqln.contains(" SET "), "got: {sql}");
-    assert!(
-        sqln.contains(&format!("FROM {}, {}", qi("a"), qi("b"))),
-        "got: {sql}"
-    );
+
+    #[cfg(feature = "mysql")]
+    {
+        assert!(
+            !sqln.contains(" FROM "),
+            "MySQL не должен печатать FROM в UPDATE: {sql}"
+        );
+    }
+    #[cfg(not(feature = "mysql"))]
+    {
+        assert!(
+            sqln.contains(&format!("FROM {}, {}", qi("a"), qi("b"))),
+            "got: {sql}"
+        );
+    }
+
     assert_eq!(params.len(), 1);
 }
 
@@ -298,7 +310,19 @@ fn delete_basic_where_and_returning() {
     );
     assert!(sqln.contains(&format!("FROM {}", qi("t"))), "got: {sql}");
     assert!(sqln.contains(" WHERE "), "got: {sql}");
-    assert!(sqln.contains(" RETURNING "), "got: {sql}");
+
+    #[cfg(feature = "mysql")]
+    {
+        assert!(
+            !sql.contains("RETURNING"),
+            "MySQL не должен печатать RETURNING: {sql}"
+        );
+    }
+    #[cfg(not(feature = "mysql"))]
+    {
+        assert!(sql.contains("RETURNING"), "got: {sql}");
+    }
+
     assert_eq!(params.len(), 1);
 }
 

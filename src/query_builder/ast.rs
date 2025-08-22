@@ -219,15 +219,15 @@ impl QueryBuilder {
                     offset: None,
                     limit_by: vec![],
                 }),
-                (None, Some(o)) => {
-                    // MySQL не поддерживает "OFFSET m" без LIMIT.
-                    // Эмулируем "безлимитный" оффсет через огромный лимит.
-                    Some(LimitClause::OffsetCommaLimit {
-                        offset: num_expr(o),
-                        limit: num_expr(u64::MAX),
-                    })
-                }
-                (None, None) => None, // уже покрыто, для полноты match'а
+                (None, Some(o)) => Some(LimitClause::LimitOffset {
+                    limit: None,
+                    offset: Some(Offset {
+                        value: num_expr(o),
+                        rows: OffsetRows::None,
+                    }),
+                    limit_by: vec![],
+                }),
+                (None, None) => None,
             },
 
             // ----- Стандартная ветка (PG/SQLite и др.) -----
