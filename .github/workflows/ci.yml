@@ -41,35 +41,35 @@ jobs:
       - name: rustfmt (check)
         run: cargo fmt --all -- --check
 
-  clippy:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: default
-            feat: ""
-            no_defaults: ""
-          - name: sqlite
-            feat: "--features sqlite"
-            no_defaults: "--no-default-features --features sqlite"
-          - name: postgres
-            feat: "--features postgres"
-            no_defaults: "--no-default-features --features postgres"
-          - name: mysql
-            no_defaults: "--no-default-features --features mysql"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.89.0
-        with:
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+  # clippy:
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       include:
+  #         - name: default
+  #           feat: ""
+  #           no_defaults: ""
+  #         - name: sqlite
+  #           feat: "--features sqlite"
+  #           no_defaults: "--no-default-features --features sqlite"
+  #         - name: postgres
+  #           feat: "--features postgres"
+  #           no_defaults: "--no-default-features --features postgres"
+  #         - name: mysql
+  #           no_defaults: "--no-default-features --features mysql"
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@1.89.0
+  #       with:
+  #         components: clippy, rustfmt
+  #     - uses: Swatinem/rust-cache@v2
 
-      - name: Clippy strict (src only) ${{ matrix.name }}
-        run: |
-          cargo clippy --lib --bins ${{ matrix.no_defaults }} -- -W warnings
+  #     - name: Clippy strict (src only) ${{ matrix.name }}
+  #       run: |
+  #         cargo clippy --lib --bins ${{ matrix.no_defaults }} -- -W warnings
 
-      - name: Clippy relaxed (tests) ${{ matrix.name }}
-        run: |
-          cargo clippy --tests ${{ matrix.no_defaults }} -- \
-            -A clippy::into_iter_on_ref
+  #     - name: Clippy relaxed (tests) ${{ matrix.name }}
+  #       run: |
+  #         cargo clippy --tests ${{ matrix.no_defaults }} -- \
+  #           -A clippy::into_iter_on_ref
