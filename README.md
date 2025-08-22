@@ -2,10 +2,22 @@
 
 *Быстрый и удобный конструктор SQL-запросов для Rust с интерфейсом, вдохновлённым Knex.js.*
 
+[![crates.io](https://img.shields.io/crates/v/krust.svg)](https://crates.io/crates/krust)
+[![docs.rs](https://docs.rs/krust/badge.svg)](https://docs.rs/krust)
+
 [![CI](https://github.com/srcountrochester/krust/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/srcountrochester/krust/actions/workflows/ci.yml)
-![coverage](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/srcountrochester/krust/gh-pages/badges/coverage.json&query=$.coverage&suffix=%25&label=coverage)
+![coverage](https://img.shields.io/badge/dynamic/json?url=https://srcountrochester.github.io/krust/badges/coverage.json&query=$.coverage&suffix=%25&label=coverage)
+
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/srcountrochester/krust/badge)](https://scorecard.dev/viewer/?uri=github.com/srcountrochester/krust)
-[![LOC](https://tokei.rs/b1/github/srcountrochester/krust?category=code)](https://tokei.rs/b1/github/srcountrochester/krust)
+[![cargo-deny](https://github.com/srcountrochester/krust/actions/workflows/deny.yml/badge.svg?branch=master)](https://github.com/srcountrochester/krust/actions/workflows/deny.yml)
+
+![license](https://img.shields.io/badge/dynamic/toml?url=https://raw.githubusercontent.com/srcountrochester/krust/master/Cargo.toml&query=$.package.license&label=license)
+![edition](https://img.shields.io/badge/dynamic/toml?url=https://raw.githubusercontent.com/srcountrochester/krust/master/Cargo.toml&query=%24.package.edition&label=edition)
+
+[![LOC](https://tokei.rs/b1/github/srcountrochester/krust?category=code&style=flat)](https://tokei.rs/b1/github/srcountrochester/krust)
+![code size](https://img.shields.io/github/languages/code-size/srcountrochester/krust)
+
+
 
 ## Введение
 
