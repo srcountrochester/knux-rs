@@ -35,6 +35,9 @@ where
             Param::NullI64 => q.bind(None::<i64>),
             Param::NullI32 => q.bind(None::<i32>),
             Param::NullF64 => q.bind(None::<f64>),
+            Param::NullF32 => q.bind(None::<f32>),
+            Param::NullI16 => q.bind(None::<i16>),
+            Param::NullI8 => q.bind(None::<i8>),
 
             #[cfg(feature = "time")]
             Param::Date(v) => q.bind(v),
@@ -89,6 +92,9 @@ where
             Param::Str(v) => q.bind(v),
             Param::Bool(v) => q.bind(v),
             Param::Bytes(v) => q.bind(v),
+            Param::NullF32 => q.bind(None::<f32>),
+            Param::NullI16 => q.bind(None::<i16>),
+            Param::NullI8 => q.bind(None::<i8>),
 
             #[cfg(feature = "serde_json")]
             Param::Json(v) => q.bind(v),
@@ -178,6 +184,9 @@ where
             Param::NullI64 => q.bind(None::<i64>),
             Param::NullI32 => q.bind(None::<i32>),
             Param::NullF64 => q.bind(None::<f64>),
+            Param::NullF32 => q.bind(None::<f32>),
+            Param::NullI16 => q.bind(None::<i16>),
+            Param::NullI8 => q.bind(None::<i8>),
         };
     }
     Ok(q.fetch_all(exec).await?)
@@ -214,12 +223,14 @@ where
             Param::NullI64 => q.bind(None::<i64>),
             Param::NullI32 => q.bind(None::<i32>),
             Param::NullF64 => q.bind(None::<f64>),
+            Param::NullF32 => q.bind(None::<f32>),
+            Param::NullI16 => q.bind(None::<i16>),
+            Param::NullI8 => q.bind(None::<i8>),
         };
     }
     Ok(q.execute(exec).await?.rows_affected())
 }
 
-// NEW: SQLite
 #[cfg(feature = "sqlite")]
 pub async fn fetch_typed_sqlite_exec<'e, E, T>(
     exec: E,

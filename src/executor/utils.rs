@@ -46,7 +46,7 @@ where
 }
 
 #[cfg(feature = "postgres")]
-pub async fn fetch_one_typed_pg<T>(pool: &PgPool, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
+pub async fn fetch_one_typed_pg<T>(pool: &PgPool, sql: &str, params: Vec<Param>) -> Result<T>
 where
     for<'r> T: sqlx::FromRow<'r, PgRow> + Send + Unpin,
 {
@@ -59,7 +59,7 @@ pub async fn fetch_optional_typed_pg<T>(
     pool: &PgPool,
     sql: &str,
     params: Vec<Param>,
-) -> Result<Vec<T>>
+) -> Result<Option<T>>
 where
     for<'r> T: sqlx::FromRow<'r, PgRow> + Send + Unpin,
 {
@@ -77,11 +77,7 @@ where
 }
 
 #[cfg(feature = "mysql")]
-pub async fn fetch_one_typed_mysql<T>(
-    pool: &MySqlPool,
-    sql: &str,
-    params: Vec<Param>,
-) -> Result<Vec<T>>
+pub async fn fetch_one_typed_mysql<T>(pool: &MySqlPool, sql: &str, params: Vec<Param>) -> Result<T>
 where
     for<'r> T: sqlx::FromRow<'r, MySqlRow> + Send + Unpin,
 {
@@ -94,7 +90,7 @@ pub async fn fetch_optional_typed_mysql<T>(
     pool: &MySqlPool,
     sql: &str,
     params: Vec<Param>,
-) -> Result<Vec<T>>
+) -> Result<Option<T>>
 where
     for<'r> T: sqlx::FromRow<'r, MySqlRow> + Send + Unpin,
 {
