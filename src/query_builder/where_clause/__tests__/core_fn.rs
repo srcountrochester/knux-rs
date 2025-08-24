@@ -1,12 +1,15 @@
 use super::super::*;
 use super::extract_where;
 use crate::expression::helpers::{col, val};
+use crate::query_builder::args::QBArg;
 use crate::query_builder::args::QBClosure;
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr};
 
+type QB = QueryBuilder<'static, ()>;
+
 #[test]
 fn attach_where_with_and_then_or() {
-    let mut qb = QueryBuilder::new_empty().from("users").select("*");
+    let mut qb = QB::new_empty().from("users").select("*");
 
     // a = 1
     let (e1, p1) = qb
@@ -40,14 +43,14 @@ fn attach_where_with_and_then_or() {
 
 #[test]
 fn resolve_where_group_empty_returns_none() {
-    let mut qb = QueryBuilder::new_empty().from("t").select("*");
+    let mut qb = QB::new_empty().from("t").select("*");
     let group = qb.resolve_where_group(Vec::<crate::expression::Expression>::new());
     assert!(group.is_none());
 }
 
 #[test]
 fn resolve_qbarg_into_expr_passes_expression_and_subquery_and_closure() {
-    let qb = QueryBuilder::new_empty().from("t").select("*");
+    let qb = QB::new_empty().from("t").select("*");
 
     // Expression passthrough
     let (e, _p) = qb
@@ -72,7 +75,7 @@ fn resolve_qbarg_into_expr_passes_expression_and_subquery_and_closure() {
 #[test]
 fn build_in_predicate_empty_values_records_error() {
     // Пустой список значений → None + ошибка билдера
-    let mut qb = QueryBuilder::new_empty().from("users").select("*");
+    let mut qb = QB::new_empty().from("users").select("*");
     let pred = qb.build_in_predicate(
         col("id"),
         Vec::<crate::expression::Expression>::new(),
@@ -94,7 +97,7 @@ fn build_in_predicate_single_value_list_produces_inlist_and_collects_params() {
     use sqlparser::ast::Expr as SqlExpr;
 
     // Один элемент (не подзапрос) → IN (expr_list) с 1 элементом
-    let mut qb = QueryBuilder::new_empty().from("users").select("*");
+    let mut qb = QB::new_empty().from("users").select("*");
     let (pred, params) = qb
         .build_in_predicate(col("id"), val(1), false)
         .expect("predicate");

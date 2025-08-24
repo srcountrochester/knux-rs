@@ -2,7 +2,10 @@ use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
 use crate::query_builder::error::Error;
 use crate::tests::dialect_test_helpers::qi;
+use crate::type_helpers::QBClosureHelper;
 use sqlparser::ast::CteAsMaterialized;
+
+type QB = QueryBuilder<'static, ()>;
 
 fn norm(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -11,8 +14,8 @@ fn norm(s: &str) -> String {
 #[test]
 fn with_pushes_cte_and_bubbles_params() {
     // WITH cte AS (SELECT $1) SELECT "id" FROM "cte"
-    let qb = QueryBuilder::new_empty()
-        .with("cte", |q: QueryBuilder| q.select((val(100i32),)))
+    let qb = QB::new_empty()
+        .with::<QBClosureHelper<()>>("cte", |q| q.select((val(100i32),)))
         .from("cte")
         .select((col("id"),));
 
@@ -29,8 +32,8 @@ fn with_pushes_cte_and_bubbles_params() {
     assert!(cte.materialized.is_none());
 
     // 2) SQL: есть WITH, имя CTE корректно квотится, FROM "cte" используется
-    let (sql, _p) = QueryBuilder::new_empty()
-        .with("cte", |q: QueryBuilder| q.select((val(100i32),)))
+    let (sql, _p) = QB::new_empty()
+        .with::<QBClosureHelper<()>>("cte", |q| q.select((val(100i32),)))
         .from("cte")
         .select((col("id"),))
         .to_sql()
@@ -43,8 +46,8 @@ fn with_pushes_cte_and_bubbles_params() {
 
 #[test]
 fn with_recursive_sets_flag_and_renders_recursive() {
-    let (query, _params) = QueryBuilder::new_empty()
-        .with_recursive("r", |q: QueryBuilder| q.select((val(1i32),)))
+    let (query, _params) = QB::new_empty()
+        .with_recursive::<QBClosureHelper<()>>("r", |q| q.select((val(1i32),)))
         .select((col("x"),))
         .from("r")
         .build_query_ast()
@@ -54,8 +57,8 @@ fn with_recursive_sets_flag_and_renders_recursive() {
     assert!(w.recursive, "recursive flag must be set");
 
     // Рендер должен содержать WITH RECURSIVE
-    let (sql, _p) = QueryBuilder::new_empty()
-        .with_recursive("r", |q: QueryBuilder| q.select((val(1i32),)))
+    let (sql, _p) = QB::new_empty()
+        .with_recursive::<QBClosureHelper<()>>("r", |q| q.select((val(1i32),)))
         .select((col("x"),))
         .from("r")
         .to_sql()
@@ -70,8 +73,8 @@ fn with_recursive_sets_flag_and_renders_recursive() {
 #[test]
 fn with_materialized_and_not_materialized_set_ast_only() {
     // MATERIALIZED
-    let (q1, _p1) = QueryBuilder::new_empty()
-        .with_materialized("m", |q: QueryBuilder| q.select((val(1i32),)))
+    let (q1, _p1) = QB::new_empty()
+        .with_materialized::<QBClosureHelper<()>>("m", |q| q.select((val(1i32),)))
         .build_query_ast()
         .expect("build ok");
     let w1 = q1.with.expect("WITH missing");
@@ -82,8 +85,8 @@ fn with_materialized_and_not_materialized_set_ast_only() {
     ));
 
     // NOT MATERIALIZED
-    let (q2, _p2) = QueryBuilder::new_empty()
-        .with_not_materialized("n", |q: QueryBuilder| q.select((val(1i32),)))
+    let (q2, _p2) = QB::new_empty()
+        .with_not_materialized::<QBClosureHelper<()>>("n", |q| q.select((val(1i32),)))
         .build_query_ast()
         .expect("build ok");
     let w2 = q2.with.expect("WITH missing");
@@ -98,8 +101,8 @@ fn with_materialized_and_not_materialized_set_ast_only() {
 
 #[test]
 fn with_from_sets_from_ident_in_ast() {
-    let (q, _p) = QueryBuilder::new_empty()
-        .with_from("t", "base", |q: QueryBuilder| q.select((col("id"),)))
+    let (q, _p) = QB::new_empty()
+        .with_from::<QBClosureHelper<()>>("t", "base", |q| q.select((col("id"),)))
         .build_query_ast()
         .expect("build ok");
 
@@ -112,7 +115,7 @@ fn with_from_sets_from_ident_in_ast() {
 #[test]
 fn with_rejects_expression_body_and_reports_builder_error() {
     // Передача Expr вместо подзапроса должна давать builder error
-    let qb = QueryBuilder::new_empty().with("bad", (col("id"),));
+    let qb = QB::new_empty().with("bad", (col("id"),));
     let err = qb.build_query_ast().err().expect("expected builder error");
     match err {
         Error::BuilderErrors(_) => { /* ok */ }

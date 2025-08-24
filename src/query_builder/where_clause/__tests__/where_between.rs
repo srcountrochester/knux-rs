@@ -3,9 +3,11 @@ use super::extract_where;
 use crate::expression::helpers::{col, val};
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr};
 
+type QB = QueryBuilder<'static, ()>;
+
 #[test]
 fn where_between_and_not_between() {
-    let qb1 = QueryBuilder::new_empty()
+    let qb1 = QB::new_empty()
         .from("t")
         .select("*")
         .where_between(col("age"), val(18), val(30));
@@ -17,7 +19,7 @@ fn where_between_and_not_between() {
         panic!("expected Between");
     }
 
-    let qb2 = QueryBuilder::new_empty()
+    let qb2 = QB::new_empty()
         .from("t")
         .select("*")
         .where_not_between(col("age"), val(18), val(30));
@@ -33,7 +35,7 @@ fn where_between_and_not_between() {
 #[test]
 fn or_where_between_appends_with_or() {
     // (a = 1) OR (age BETWEEN 18 AND 30)
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select("*")
         .where_(col("a").eq(val(1)))
@@ -61,7 +63,7 @@ fn or_where_between_appends_with_or() {
 #[test]
 fn or_where_not_between_appends_with_or_and_negated() {
     // (a = 1) OR (age NOT BETWEEN 18 AND 30)
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select("*")
         .where_(col("a").eq(val(1)))
@@ -89,7 +91,7 @@ fn or_where_not_between_appends_with_or_and_negated() {
 #[test]
 fn where_between_collects_params_for_bounds() {
     // Проверяем, что параметры от low/high попадают в билдер
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select("*")
         .where_between(col("age"), val(18), val(30));

@@ -2,6 +2,8 @@ use super::super::super::*; // QueryBuilder и др.
 use crate::expression::helpers::{col, val};
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr, Query, SetExpr};
 
+type QB = QueryBuilder<'static, ()>;
+
 /// Достаём HAVING из AST без клонов.
 fn extract_having(q: &Query) -> Option<&SqlExpr> {
     match q.body.as_ref() {
@@ -12,7 +14,7 @@ fn extract_having(q: &Query) -> Option<&SqlExpr> {
 
 #[test]
 fn having_in_with_list() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select(("status",))
         .group_by(("status",))
@@ -34,9 +36,9 @@ fn having_in_with_list() {
 #[test]
 fn having_in_with_subquery() {
     // подзапрос: SELECT id FROM admins
-    let sub = QueryBuilder::new_empty().from("admins").select(("id",));
+    let sub = QB::new_empty().from("admins").select(("id",));
 
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select(("id",))
         .group_by(("id",))
@@ -54,7 +56,7 @@ fn having_in_with_subquery() {
 
 #[test]
 fn or_having_in_combines_with_or() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("status",))
         .group_by(("status",))
@@ -83,7 +85,7 @@ fn or_having_in_combines_with_or() {
 
 #[test]
 fn having_not_in_with_list() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select(("role",))
         .group_by(("role",))
@@ -104,7 +106,7 @@ fn having_in_empty_values_records_builder_error() {
     // Пустой список значений должен зарегистрировать ошибку билдера.
     let empty: Vec<&str> = vec![]; // ArgList поддерживает Vec, пустой — кейс ошибки
 
-    let err = QueryBuilder::new_empty()
+    let err = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -123,7 +125,7 @@ fn having_in_empty_values_records_builder_error() {
 
 #[test]
 fn having_in_collects_params_order() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))

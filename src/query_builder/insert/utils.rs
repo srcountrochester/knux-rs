@@ -1,6 +1,6 @@
-use crate::{param::Param, utils::parse_object_name};
+use crate::param::Param;
 use smallvec::SmallVec;
-use sqlparser::ast::{Expr as SqlExpr, Ident, ObjectName, ObjectNamePart};
+use sqlparser::ast::{Expr as SqlExpr, Ident};
 
 /// Одна строка для VALUES(...)
 #[derive(Debug, Clone)]

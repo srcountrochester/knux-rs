@@ -2,6 +2,8 @@ use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
 use crate::tests::dialect_test_helpers::qi;
 
+type QB = QueryBuilder<'static, ()>;
+
 /// Нормализатор для сравнения строк SQL (если у вас уже есть — используйте его)
 fn norm(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -9,7 +11,7 @@ fn norm(s: &str) -> String {
 
 #[test]
 fn distinct_without_columns_falls_back_to_star() {
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .from("users")
         .distinct([] as [&str; 0]) // пустой список
         .to_sql()
@@ -26,7 +28,7 @@ fn distinct_without_columns_falls_back_to_star() {
 
 #[test]
 fn distinct_with_columns_adds_projection_and_flag() {
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .from("users")
         .distinct(("first_name", "last_name"))
         .to_sql()
@@ -46,7 +48,7 @@ fn distinct_with_columns_adds_projection_and_flag() {
 #[test]
 fn distinct_collects_params_from_expressions() {
     // DISTINCT val(10), col("x")
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .from("t")
         .distinct((val(10i32), col("x")))
         .to_sql()
@@ -62,7 +64,7 @@ fn distinct_collects_params_from_expressions() {
 
 #[test]
 fn distinct_on_builds_distinct_on_clause() {
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .from("users")
         .select(("*",))
         .distinct_on((col("age"),))
@@ -89,8 +91,8 @@ fn distinct_on_builds_distinct_on_clause() {
 #[test]
 fn distinct_on_accepts_multiple_expressions_and_params() {
     // DISTINCT ON (users.age, users.country, (SELECT ?))
-    let sub = QueryBuilder::new_empty().select((val(99i32),));
-    let (sql, params) = QueryBuilder::new_empty()
+    let sub = QB::new_empty().select((val(99i32),));
+    let (sql, params) = QB::new_empty()
         .from("users")
         .select(("*",))
         .distinct_on((col("users.age"), col("users.country"), sub))

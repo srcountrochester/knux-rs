@@ -5,10 +5,10 @@ use sqlparser::ast::{
     BinaryOperator, Expr as SExpr, Ident, ObjectName, ObjectNamePart, SelectItem,
 };
 
-fn qb_pg() -> QueryBuilder {
+fn qb_pg() -> QueryBuilder<'static> {
     QueryBuilder::new_empty()
 }
-fn qb_sqlite() -> QueryBuilder {
+fn qb_sqlite() -> QueryBuilder<'static> {
     QueryBuilder::new_empty().dialect(Dialect::SQLite)
 }
 

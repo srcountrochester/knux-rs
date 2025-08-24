@@ -4,12 +4,12 @@ use sqlparser::ast::Expr as SqlExpr;
 use crate::query_builder::QueryBuilder;
 use crate::query_builder::args::IntoQBArg;
 
-impl QueryBuilder {
+impl<'a, K> QueryBuilder<'a, K> {
     pub fn having_between<T, L, H>(mut self, target: T, low: L, high: H) -> Self
     where
-        T: IntoQBArg,
-        L: IntoQBArg,
-        H: IntoQBArg,
+        T: IntoQBArg<'a>,
+        L: IntoQBArg<'a>,
+        H: IntoQBArg<'a>,
     {
         if let (Ok((t, mut pt)), Ok((l, mut pl)), Ok((h, mut ph))) = (
             self.resolve_qbarg_into_expr(target.into_qb_arg()),
@@ -33,9 +33,9 @@ impl QueryBuilder {
 
     pub fn or_having_between<T, L, H>(mut self, target: T, low: L, high: H) -> Self
     where
-        T: IntoQBArg,
-        L: IntoQBArg,
-        H: IntoQBArg,
+        T: IntoQBArg<'a>,
+        L: IntoQBArg<'a>,
+        H: IntoQBArg<'a>,
     {
         if let (Ok((t, mut pt)), Ok((l, mut pl)), Ok((h, mut ph))) = (
             self.resolve_qbarg_into_expr(target.into_qb_arg()),
@@ -59,9 +59,9 @@ impl QueryBuilder {
 
     pub fn having_not_between<T, L, H>(mut self, target: T, low: L, high: H) -> Self
     where
-        T: IntoQBArg,
-        L: IntoQBArg,
-        H: IntoQBArg,
+        T: IntoQBArg<'a>,
+        L: IntoQBArg<'a>,
+        H: IntoQBArg<'a>,
     {
         if let (Ok((t, mut pt)), Ok((l, mut pl)), Ok((h, mut ph))) = (
             self.resolve_qbarg_into_expr(target.into_qb_arg()),
@@ -85,9 +85,9 @@ impl QueryBuilder {
 
     pub fn or_having_not_between<T, L, H>(mut self, target: T, low: L, high: H) -> Self
     where
-        T: IntoQBArg,
-        L: IntoQBArg,
-        H: IntoQBArg,
+        T: IntoQBArg<'a>,
+        L: IntoQBArg<'a>,
+        H: IntoQBArg<'a>,
     {
         if let (Ok((t, mut pt)), Ok((l, mut pl)), Ok((h, mut ph))) = (
             self.resolve_qbarg_into_expr(target.into_qb_arg()),

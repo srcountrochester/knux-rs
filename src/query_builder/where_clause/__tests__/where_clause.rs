@@ -1,11 +1,14 @@
 use super::super::*;
 use super::extract_where;
 use crate::expression::helpers::{col, val};
+use crate::type_helpers::QBClosureHelper;
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr, UnaryOperator};
+
+type QB = QueryBuilder<'static, ()>;
 
 #[test]
 fn where_single_expression() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("id").eq(val(1)));
@@ -24,7 +27,7 @@ fn where_single_expression() {
 #[test]
 fn where_multiple_args_tuple_and_chaining() {
     // .where((a=1, b=2)) + повторный .where(c=3) → ((a=1 AND b=2) AND c=3)
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_((col("a").eq(val(1)), col("b").eq(val(2))))
@@ -66,25 +69,22 @@ fn where_multiple_args_tuple_and_chaining() {
 #[test]
 fn where_accepts_subquery_and_closure() {
     // подзапрос как цель WHERE: получим Expr::Subquery
-    let sub = QueryBuilder::new_empty()
+    let sub = QB::new_empty()
         .from("accounts")
         .select("*")
         .where_(col("user_id").eq(val(42)));
 
-    let qb = QueryBuilder::new_empty()
-        .from("users")
-        .select("*")
-        .where_(sub);
+    let qb = QB::new_empty().from("users").select("*").where_(sub);
 
     let (query, _params) = qb.build_query_ast().expect("build ok");
     let w = extract_where(&query).expect("where present");
     assert!(matches!(w, SqlExpr::Subquery(_)));
 
     // closure-вариант
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
-        .where_(|qb: QueryBuilder| {
+        .where_::<QBClosureHelper<()>>(|qb| {
             qb.from("accounts")
                 .select("*")
                 .where_(col("user_id").eq(val(7)))
@@ -99,7 +99,7 @@ fn where_accepts_subquery_and_closure() {
 fn where_accepts_string_as_boolean_identifier_via_col() {
     // &str мапится в Expression через col("..."), это ок для boolean-колонок
     // Здесь просто проверим, что WHERE присутствует и это идентификатор.
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_("is_active"); // через IntoQBArg -> QBArg::Expr(col("is_active"))
@@ -111,7 +111,7 @@ fn where_accepts_string_as_boolean_identifier_via_col() {
 
 #[test]
 fn and_where_appends_with_and() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("a").eq(val(1)))
@@ -137,7 +137,7 @@ fn and_where_appends_with_and() {
 
 #[test]
 fn or_where_appends_with_or() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("a").eq(val(1)))
@@ -164,7 +164,7 @@ fn or_where_appends_with_or() {
 #[test]
 fn or_then_and_preserves_grouping() {
     // (a=1 OR b=2) AND c=3
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("a").eq(val(1)))
@@ -195,7 +195,7 @@ fn or_then_and_preserves_grouping() {
 #[test]
 fn group_inside_or_where_is_and_of_items() {
     // where a=1 OR (b=2 AND c=3)
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("a").eq(val(1)))
@@ -222,7 +222,7 @@ fn group_inside_or_where_is_and_of_items() {
 
 #[test]
 fn where_not_wraps_group_with_not() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_not((col("a").eq(val(1)), col("b").eq(val(2))));

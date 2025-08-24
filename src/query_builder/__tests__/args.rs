@@ -2,7 +2,10 @@ use super::super::args::{ArgList, IntoQBArg, QBArg, collect_args};
 use crate::expression::helpers::col;
 use crate::param::Param;
 use crate::query_builder::{Error, QueryBuilder, Result};
+use crate::type_helpers::QBClosureHelper;
 use sqlparser::ast;
+
+type QB = QueryBuilder<'static, ()>;
 
 #[test]
 fn into_qb_arg_from_str_and_string() {
@@ -42,7 +45,8 @@ fn into_qb_arg_from_querybuilder() {
 
 #[test]
 fn into_qb_arg_from_closure() {
-    let closure_arg: QBArg = (|qb: QueryBuilder| qb).into_qb_arg();
+    let scalar_subq: QBClosureHelper<()> = |q| q;
+    let closure_arg: QBArg = scalar_subq.into_qb_arg();
     assert!(matches!(closure_arg, QBArg::Closure(_)));
 }
 
@@ -62,7 +66,8 @@ fn try_into_expr_fails_for_subquery_and_closure() {
     let err = subq_arg.try_into_expr().unwrap_err();
     assert!(matches!(err, Error::InvalidExpression { .. }));
 
-    let clos_arg: QBArg = (|qb: QueryBuilder| qb).into_qb_arg();
+    let scalar_subq: QBClosureHelper<()> = |q| q;
+    let clos_arg: QBArg = scalar_subq.into_qb_arg();
     let err2 = clos_arg.try_into_expr().unwrap_err();
     assert!(matches!(err2, Error::InvalidExpression { .. }));
 }
@@ -110,7 +115,8 @@ fn resolve_into_expr_with_for_subquery_and_closure() {
     assert_eq!(params.len(), 1);
 
     // Closure
-    let clos_arg: QBArg = (|qb: QueryBuilder| qb).into_qb_arg();
+    let scalar_subq: QBClosureHelper<()> = |q| q;
+    let clos_arg: QBArg = scalar_subq.into_qb_arg();
     let (expr2, params2) = clos_arg.resolve_into_expr_with(dummy_builder).unwrap();
     assert!(matches!(expr2, ast::Expr::Subquery(_)));
     assert_eq!(params2.len(), 1);
@@ -118,11 +124,12 @@ fn resolve_into_expr_with_for_subquery_and_closure() {
 
 #[test]
 fn collect_args_mixed_inputs() {
+    let scalar_subq: QBClosureHelper<()> = |q| q;
     let args = collect_args(vec![
         "id".into_qb_arg(),
         col("foo").into_qb_arg(),
         QueryBuilder::new_empty().into_qb_arg(),
-        (|qb: QueryBuilder| qb).into_qb_arg(),
+        scalar_subq.into_qb_arg(),
     ]);
     assert_eq!(args.len(), 4);
     assert!(matches!(args[0], QBArg::Expr(_)));
@@ -133,7 +140,9 @@ fn collect_args_mixed_inputs() {
 
 #[test]
 fn tuple_variadic_mixed_types() {
-    let t = ("id", col("name"), |q: QueryBuilder| q.select(("x",)));
+    let scalar_subq: QBClosureHelper<()> = |q| q.select(("x",));
+
+    let t = ("id", col("name"), scalar_subq);
     let args = t.into_vec();
     assert_eq!(args.len(), 3);
     assert!(matches!(args[0], QBArg::Expr(_)));
@@ -156,11 +165,12 @@ fn vec_of_strs_and_slice_of_strs() {
 
 #[test]
 fn into_qbarg_still_works_explicitly() {
+    let scalar_subq: QBClosureHelper<()> = |q| q;
     let args: Vec<QBArg> = vec![
         "id".into_qb_arg(),
         col("foo").into_qb_arg(),
         QueryBuilder::new_empty().into_qb_arg(),
-        (|qb: QueryBuilder| qb).into_qb_arg(),
+        scalar_subq.into_qb_arg(),
     ];
     assert_eq!(args.len(), 4);
     assert!(matches!(args[0], QBArg::Expr(_)));

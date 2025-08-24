@@ -18,7 +18,7 @@ impl HavingNode {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     #[inline]
     pub(crate) fn attach_having_with_and(
         &mut self,
@@ -66,7 +66,7 @@ impl QueryBuilder {
         args: A,
     ) -> Option<(SqlExpr, SmallVec<[Param; 8]>)>
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         let items: Vec<QBArg> = args.into_vec();
         if items.is_empty() {

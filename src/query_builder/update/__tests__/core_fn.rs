@@ -7,7 +7,7 @@ use sqlparser::ast::{
     BinaryOperator, Expr as SqlExpr, Ident, ObjectName, ObjectNamePart, SelectItem,
 };
 
-fn qb_pg() -> QueryBuilder {
+fn qb_pg() -> QueryBuilder<'static> {
     QueryBuilder::new_empty()
 }
 

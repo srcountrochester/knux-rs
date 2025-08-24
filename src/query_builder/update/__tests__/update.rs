@@ -2,7 +2,7 @@ use crate::expression::{col, lit, table, val};
 use crate::query_builder::QueryBuilder;
 use sqlparser::ast::{BinaryOperator, Expr as E, Ident, ObjectName, ObjectNamePart, SelectItem};
 
-fn qb_pg() -> QueryBuilder {
+fn qb_pg() -> QueryBuilder<'static> {
     QueryBuilder::new_empty()
 }
 

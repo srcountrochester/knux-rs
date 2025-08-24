@@ -48,10 +48,10 @@ impl JoinNode {
     }
 }
 
-impl QueryBuilder {
+impl<'a, K> QueryBuilder<'a, K> {
     pub(super) fn push_join_internal<T, O>(mut self, kind: JoinKind, target: T, on: O) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
         O: Into<JoinOnArg>,
     {
         // 0) Запреты по диалектам (SQLite не умеет RIGHT/FULL)

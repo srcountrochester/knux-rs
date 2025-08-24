@@ -1,6 +1,6 @@
 use crate::query_builder::QueryBuilder;
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// LIMIT <n>
     #[inline]
     pub fn limit(mut self, n: u64) -> Self {

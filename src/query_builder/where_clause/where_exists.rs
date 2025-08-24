@@ -3,10 +3,10 @@ use sqlparser::ast::Expr as SqlExpr;
 use crate::query_builder::args::IntoQBArg;
 use crate::query_builder::{QueryBuilder, args::QBArg};
 
-impl QueryBuilder {
+impl<'a, K> QueryBuilder<'a, K> {
     pub fn where_exists<T>(mut self, sub: T) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
     {
         match sub.into_qb_arg() {
             QBArg::Subquery(qb) => {
@@ -39,7 +39,7 @@ impl QueryBuilder {
 
     pub fn or_where_exists<T>(mut self, sub: T) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
     {
         match sub.into_qb_arg() {
             QBArg::Subquery(qb) => {
@@ -72,7 +72,7 @@ impl QueryBuilder {
 
     pub fn where_not_exists<T>(mut self, sub: T) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
     {
         match sub.into_qb_arg() {
             QBArg::Subquery(qb) => {
@@ -105,7 +105,7 @@ impl QueryBuilder {
 
     pub fn or_where_not_exists<T>(mut self, sub: T) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
     {
         match sub.into_qb_arg() {
             QBArg::Subquery(qb) => {

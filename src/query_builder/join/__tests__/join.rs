@@ -1,12 +1,17 @@
 use super::super::*;
-use crate::expression::{
-    JoinOnExt,
-    helpers::{col, table, val},
+use crate::{
+    expression::{
+        JoinOnExt,
+        helpers::{col, table, val},
+    },
+    type_helpers::QBClosureHelper,
 };
 use sqlparser::ast::{
     BinaryOperator as BO, Expr as SqlExpr, Join, JoinConstraint, JoinOperator, Query, SetExpr,
     TableFactor,
 };
+
+type QB = QueryBuilder<'static, ()>;
 
 /// Аккуратный доступ к первому JOIN без перемещений.
 fn first_join_from(q: &Query) -> &Join {
@@ -26,7 +31,7 @@ fn first_join_from(q: &Query) -> &Join {
 
 #[test]
 fn inner_join_with_on_string() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .join("accounts", "users.id = accounts.user_id");
@@ -45,7 +50,7 @@ fn inner_join_with_on_string() {
 
 #[test]
 fn inner_join_with_on_expression_chain_and_on() {
-    let qb = QueryBuilder::new_empty().from("users").select("*").join(
+    let qb = QB::new_empty().from("users").select("*").join(
         table("accounts"),
         col("users.id")
             .eq(col("accounts.user_id"))
@@ -77,7 +82,7 @@ fn inner_join_with_on_expression_chain_and_on() {
 
 #[test]
 fn cross_join_has_no_constraint() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .cross_join("accounts");
@@ -89,7 +94,7 @@ fn cross_join_has_no_constraint() {
 
 #[test]
 fn left_join_with_on_string() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .left_join("accounts", "users.id = accounts.user_id");
@@ -109,7 +114,7 @@ fn left_join_with_on_string() {
 #[test]
 fn left_join_without_on_registers_error() {
     // Не задаём ON — должен появиться builder error
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .left_join("accounts", |on| on);
@@ -126,7 +131,7 @@ fn left_join_without_on_registers_error() {
 fn right_join_behavior_is_dialect_agnostic() {
     // Тест устойчив к диалекту: в SQLite ожидаем BuilderErrors;
     // в других — проверяем оператор RIGHT OUTER.
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .right_join("accounts", "users.id = accounts.user_id");
@@ -156,7 +161,7 @@ fn right_join_behavior_is_dialect_agnostic() {
 
 #[test]
 fn full_join_behavior_is_dialect_agnostic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .full_join("accounts", "users.id = accounts.user_id");
@@ -186,12 +191,12 @@ fn full_join_behavior_is_dialect_agnostic() {
 
 #[test]
 fn join_with_subquery_target_produces_derived_relation() {
-    let sub = QueryBuilder::new_empty()
+    let sub = QB::new_empty()
         .from("accounts")
         .select("*")
         .r#where(col("user_id").eq(val(1))); // имя метода where у тебя может быть `where_`
 
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .join(sub, "users.id = accounts.user_id");
@@ -206,14 +211,17 @@ fn join_with_subquery_target_produces_derived_relation() {
 
 #[test]
 fn join_with_closure_target_produces_derived_relation() {
-    let qb = QueryBuilder::new_empty().from("users").select("*").join(
-        |qb: QueryBuilder| {
-            qb.from("accounts")
-                .select("*")
-                .r#where(col("user_id").eq(val(1)))
-        },
-        "users.id = accounts.user_id",
-    );
+    let qb = QB::new_empty()
+        .from("users")
+        .select("*")
+        .join::<QBClosureHelper<()>, _>(
+            |qb: QueryBuilder| {
+                qb.from("accounts")
+                    .select("*")
+                    .r#where(col("user_id").eq(val(1)))
+            },
+            "users.id = accounts.user_id",
+        );
 
     let (query, _params) = qb.build_query_ast().expect("build ok");
     let j = first_join_from(&query);
@@ -226,9 +234,7 @@ fn join_with_closure_target_produces_derived_relation() {
 #[test]
 fn join_without_from_registers_error() {
     // .join без .from — должны получить builder error
-    let qb = QueryBuilder::new_empty()
-        .select("*")
-        .join("accounts", "1=1");
+    let qb = QB::new_empty().select("*").join("accounts", "1=1");
     let err = qb.build_query_ast().unwrap_err();
     let s = err.to_string();
     assert!(
@@ -239,7 +245,7 @@ fn join_without_from_registers_error() {
 
 #[test]
 fn natural_inner_join_builds_ast() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .natural_join("accounts");
@@ -254,7 +260,7 @@ fn natural_inner_join_builds_ast() {
 
 #[test]
 fn natural_left_join_builds_ast() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .natural_left_join("accounts");
@@ -269,7 +275,7 @@ fn natural_left_join_builds_ast() {
 
 #[test]
 fn natural_right_join_behavior_is_dialect_agnostic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .natural_right_join("accounts");
@@ -295,7 +301,7 @@ fn natural_right_join_behavior_is_dialect_agnostic() {
 
 #[test]
 fn natural_full_join_behavior_is_dialect_agnostic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .natural_full_join("accounts");

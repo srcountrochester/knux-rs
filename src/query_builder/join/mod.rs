@@ -43,7 +43,7 @@ where
     }
 }
 
-impl QueryBuilder {
+impl<'a, K> QueryBuilder<'a, K> {
     /// INNER JOIN <target> [ON <expr>]
     ///
     /// Примеры:
@@ -52,7 +52,7 @@ impl QueryBuilder {
     ///   .join(sub_q, |on| on.on(...).and_on(...))
     pub fn join<T, O>(self, target: T, on: O) -> Self
     where
-        T: crate::query_builder::args::IntoQBArg,
+        T: IntoQBArg<'a>,
         O: Into<JoinOnArg>,
     {
         self.push_join_internal(JoinKind::Inner, target, on)
@@ -61,7 +61,7 @@ impl QueryBuilder {
     /// LEFT JOIN <target> ON <expr>
     pub fn left_join<T, O>(self, target: T, on: O) -> Self
     where
-        T: crate::query_builder::args::IntoQBArg,
+        T: IntoQBArg<'a>,
         O: Into<JoinOnArg>,
     {
         self.push_join_internal(JoinKind::Left, target, on)
@@ -70,7 +70,7 @@ impl QueryBuilder {
     /// RIGHT JOIN <target> ON <expr>
     pub fn right_join<T, O>(self, target: T, on: O) -> Self
     where
-        T: crate::query_builder::args::IntoQBArg,
+        T: IntoQBArg<'a>,
         O: Into<JoinOnArg>,
     {
         self.push_join_internal(JoinKind::Right, target, on)
@@ -79,7 +79,7 @@ impl QueryBuilder {
     /// FULL [OUTER] JOIN <target> ON <expr>
     pub fn full_join<T, O>(self, target: T, on: O) -> Self
     where
-        T: crate::query_builder::args::IntoQBArg,
+        T: IntoQBArg<'a>,
         O: Into<JoinOnArg>,
     {
         self.push_join_internal(JoinKind::Full, target, on)
@@ -88,7 +88,7 @@ impl QueryBuilder {
     /// CROSS JOIN <target>
     pub fn cross_join<T>(self, target: T) -> Self
     where
-        T: crate::query_builder::args::IntoQBArg,
+        T: IntoQBArg<'a>,
     {
         self.push_join_internal(JoinKind::Cross, target, JoinOnArg::None)
     }
@@ -96,7 +96,7 @@ impl QueryBuilder {
     /// NATURAL [INNER] JOIN <target>
     pub fn natural_join<T>(self, target: T) -> Self
     where
-        T: crate::query_builder::args::IntoQBArg,
+        T: IntoQBArg<'a>,
     {
         self.push_join_internal(JoinKind::NaturalInner, target, JoinOnArg::None)
     }
@@ -104,7 +104,7 @@ impl QueryBuilder {
     /// NATURAL LEFT JOIN <target>
     pub fn natural_left_join<T>(self, target: T) -> Self
     where
-        T: crate::query_builder::args::IntoQBArg,
+        T: IntoQBArg<'a>,
     {
         self.push_join_internal(JoinKind::NaturalLeft, target, JoinOnArg::None)
     }
@@ -112,7 +112,7 @@ impl QueryBuilder {
     /// NATURAL RIGHT JOIN <target>
     pub fn natural_right_join<T>(self, target: T) -> Self
     where
-        T: crate::query_builder::args::IntoQBArg,
+        T: IntoQBArg<'a>,
     {
         self.push_join_internal(JoinKind::NaturalRight, target, JoinOnArg::None)
     }
@@ -120,7 +120,7 @@ impl QueryBuilder {
     /// NATURAL FULL JOIN <target>
     pub fn natural_full_join<T>(self, target: T) -> Self
     where
-        T: crate::query_builder::args::IntoQBArg,
+        T: IntoQBArg<'a>,
     {
         self.push_join_internal(JoinKind::NaturalFull, target, JoinOnArg::None)
     }
@@ -128,7 +128,7 @@ impl QueryBuilder {
     #[inline]
     pub fn join_with<T, F>(self, target: T, f: F) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
         F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
     {
         self.push_join_internal(JoinKind::Inner, target, JoinOnArg::from(f))
@@ -137,7 +137,7 @@ impl QueryBuilder {
     #[inline]
     pub fn left_join_with<T, F>(self, target: T, f: F) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
         F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
     {
         self.push_join_internal(JoinKind::Left, target, JoinOnArg::from(f))
@@ -146,7 +146,7 @@ impl QueryBuilder {
     #[inline]
     pub fn right_join_with<T, F>(self, target: T, f: F) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
         F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
     {
         self.push_join_internal(JoinKind::Right, target, JoinOnArg::from(f))
@@ -155,7 +155,7 @@ impl QueryBuilder {
     #[inline]
     pub fn full_join_with<T, F>(self, target: T, f: F) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
         F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
     {
         self.push_join_internal(JoinKind::Full, target, JoinOnArg::from(f))
@@ -164,7 +164,7 @@ impl QueryBuilder {
     #[inline]
     pub fn cross_join_with<T, F>(self, target: T, f: F) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
         F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
     {
         self.push_join_internal(JoinKind::Cross, target, JoinOnArg::from(f))
@@ -173,7 +173,7 @@ impl QueryBuilder {
     #[inline]
     pub fn natural_join_with<T, F>(self, target: T, f: F) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
         F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
     {
         self.push_join_internal(JoinKind::NaturalInner, target, JoinOnArg::from(f))
@@ -182,7 +182,7 @@ impl QueryBuilder {
     #[inline]
     pub fn natural_left_join_with<T, F>(self, target: T, f: F) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
         F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
     {
         self.push_join_internal(JoinKind::NaturalLeft, target, JoinOnArg::from(f))
@@ -191,7 +191,7 @@ impl QueryBuilder {
     #[inline]
     pub fn natural_right_join_with<T, F>(self, target: T, f: F) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
         F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
     {
         self.push_join_internal(JoinKind::NaturalRight, target, JoinOnArg::from(f))
@@ -200,7 +200,7 @@ impl QueryBuilder {
     #[inline]
     pub fn natural_full_join_with<T, F>(self, target: T, f: F) -> Self
     where
-        T: IntoQBArg,
+        T: IntoQBArg<'a>,
         F: FnOnce(JoinOnBuilder) -> JoinOnBuilder + Send + 'static,
     {
         self.push_join_internal(JoinKind::NaturalFull, target, JoinOnArg::from(f))

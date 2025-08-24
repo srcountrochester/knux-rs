@@ -1,8 +1,10 @@
 use crate::query_builder::QueryBuilder;
 
+type QB = QueryBuilder<'static, ()>;
+
 #[test]
 fn limit_only() {
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .from("users")
         .select(("*",))
         .limit(10)
@@ -17,7 +19,7 @@ fn limit_only() {
 
 #[test]
 fn offset_only() {
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .from("users")
         .select(("*",))
         .offset(20)
@@ -33,7 +35,7 @@ fn offset_only() {
 
 #[test]
 fn limit_and_offset() {
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .from("orders")
         .select(("id",))
         .limit_offset(10, 5)

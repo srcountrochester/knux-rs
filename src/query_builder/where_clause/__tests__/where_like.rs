@@ -3,9 +3,10 @@ use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr};
 
+type QB = QueryBuilder<'static, ()>;
 #[test]
 fn where_like_basic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         // шаблон как параметр
@@ -30,7 +31,7 @@ fn where_like_basic() {
 
 #[test]
 fn where_ilike_basic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_ilike(col("name"), val("a_%"));
@@ -54,7 +55,7 @@ fn where_ilike_basic() {
 #[test]
 fn or_where_like_appends_with_or() {
     // (age > 18) OR name LIKE '%A%'
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("age").gt(val(18)))
@@ -86,7 +87,7 @@ fn or_where_like_appends_with_or() {
 #[test]
 fn or_where_ilike_appends_with_or() {
     // (age > 18) OR name ILIKE 'a_%'
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("age").gt(val(18)))
@@ -118,7 +119,7 @@ fn or_where_ilike_appends_with_or() {
 #[test]
 fn where_like_accepts_str_column() {
     // Левая часть как &str → через IntoQBArg станет col("name")
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_like("name", val("%B%"));

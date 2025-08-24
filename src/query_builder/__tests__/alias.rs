@@ -1,6 +1,9 @@
 use crate::expression::helpers::val;
 use crate::query_builder::QueryBuilder;
 use crate::tests::dialect_test_helpers::qi;
+use crate::type_helpers::QBClosureHelper;
+
+type QB = QueryBuilder<'static, ()>;
 
 fn norm(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -21,12 +24,9 @@ fn norm(s: &str) -> String {
 
 #[test]
 fn from_subquery_with_alias_via_builder_as() {
-    let sub = QueryBuilder::new_empty()
-        .select(("id",))
-        .from(("users",))
-        .r#as("u");
+    let sub = QB::new_empty().select(("id",)).from(("users",)).r#as("u");
 
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .select(("x",))
         .from((sub,))
         .to_sql()
@@ -51,9 +51,9 @@ fn from_subquery_with_alias_via_builder_as() {
 
 #[test]
 fn from_closure_subquery_with_alias() {
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .select(("x",))
-        .from(|q: QueryBuilder| q.select((val(1i32),)).r#as("t1"))
+        .from::<QBClosureHelper<()>>(|q| q.select((val(1i32),)).r#as("t1"))
         .to_sql()
         .expect("to_sql");
 

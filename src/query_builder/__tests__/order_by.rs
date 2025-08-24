@@ -2,11 +2,14 @@ use super::super::*;
 use crate::{
     expression::helpers::{col, val},
     tests::dialect_test_helpers::qi,
+    type_helpers::QBClosureHelper,
 };
+
+type QB = QueryBuilder<'static, ()>;
 
 #[test]
 fn order_by_single_and_multiple_columns() {
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .from("orders")
         .select(("id", "user_id"))
         .order_by(("user_id", "id"))
@@ -32,7 +35,7 @@ fn order_by_single_and_multiple_columns() {
 #[test]
 fn order_by_expression_collects_params() {
     // ORDER BY (age + 1)
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .from("users")
         .select(("id",))
         .order_by(col("age").add(val(1)))
@@ -49,7 +52,7 @@ fn order_by_expression_collects_params() {
 #[test]
 fn order_by_empty_list_ignored() {
     let empty: Vec<&str> = vec![];
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .from("t")
         .select(("*",))
         .order_by(empty)
@@ -65,8 +68,8 @@ fn order_by_empty_list_ignored() {
 #[test]
 fn order_by_rejects_subquery_and_closure() {
     // Subquery
-    let sub = QueryBuilder::new_empty().from("t2").select(("x",));
-    let err1 = QueryBuilder::new_empty()
+    let sub = QB::new_empty().from("t2").select(("x",));
+    let err1 = QB::new_empty()
         .from("t1")
         .select(("y",))
         .order_by(sub)
@@ -79,10 +82,10 @@ fn order_by_rejects_subquery_and_closure() {
     );
 
     // Closure
-    let err2 = QueryBuilder::new_empty()
+    let err2 = QB::new_empty()
         .from("t1")
         .select(("y",))
-        .order_by(|qb: QueryBuilder| qb.from("t2").select(("z",)))
+        .order_by::<QBClosureHelper<()>>(|qb| qb.from("t2").select(("z",)))
         .to_sql()
         .unwrap_err();
     assert!(

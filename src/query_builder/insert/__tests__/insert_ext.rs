@@ -6,13 +6,15 @@ use super::super::{ConflictAction, MergeValue};
 
 use sqlparser::ast::{SelectItem, SelectItemQualifiedWildcardKind};
 
+type QB = QueryBuilder<'static, ()>;
+
 fn names_idents(idents: &[sqlparser::ast::Ident]) -> Vec<String> {
     idents.iter().map(|i| i.value.clone()).collect()
 }
 
 #[test]
 fn returning_one_sets_single_item_and_overwrites_previous() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("users")
         .insert((col("email"), val("a@ex.com")))
         .returning((col("id"), col("email"))) // сначала два
@@ -34,7 +36,7 @@ fn returning_one_sets_single_item_and_overwrites_previous() {
 
 #[test]
 fn returning_all_sets_wildcard() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("tags")
         .columns((col("name"),))
         .insert((val("red"),))
@@ -48,7 +50,7 @@ fn returning_all_sets_wildcard() {
 
 #[test]
 fn returning_all_from_builds_qualified_wildcard() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("t")
         .insert((col("id"), val(1_i32)))
         .returning_all_from("t");
@@ -75,7 +77,7 @@ fn returning_all_from_builds_qualified_wildcard() {
 
 #[test]
 fn on_conflict_sets_target_columns() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("users")
         .columns((col("email"), col("name")))
         .insert((val("a@ex.com"), val("Alice")))
@@ -91,7 +93,7 @@ fn on_conflict_sets_target_columns() {
 
 #[test]
 fn ignore_sets_insert_ignore_and_action_do_nothing_when_target_present() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("users")
         .columns((col("email"),))
         .insert((val("a@ex.com"),))
@@ -112,7 +114,7 @@ fn ignore_sets_insert_ignore_and_action_do_nothing_when_target_present() {
 
 #[test]
 fn merge_columns_only_short_form_maps_to_from_inserted() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("users")
         .columns((col("email"), col("name"), col("age")))
         .insert((val("a@ex.com"), val("Alice"), val(33_i32)))
@@ -150,7 +152,7 @@ fn merge_columns_only_short_form_maps_to_from_inserted() {
 #[test]
 fn merge_pairs_col_value_collects_params_and_builds_expr_values() {
     // два присваивания: v = $1, ts = $2
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("kv")
         .columns((col("k"), col("v"), col("ts")))
         .insert((val("lang"), val("ru"), val(1_726_500_000_i64)))
@@ -181,7 +183,7 @@ fn merge_pairs_col_value_collects_params_and_builds_expr_values() {
 #[test]
 fn merge_all_requires_known_columns_and_populates_assignments() {
     // вариант без известных колонок => ошибка
-    let ins_err = QueryBuilder::new_empty()
+    let ins_err = QB::new_empty()
         .into("t")
         .on_conflict((col("id"),))
         .merge_all();
@@ -191,7 +193,7 @@ fn merge_all_requires_known_columns_and_populates_assignments() {
     );
 
     // вариант с известными колонками
-    let ins_ok = QueryBuilder::new_empty()
+    let ins_ok = QB::new_empty()
         .into("t")
         .columns((col("a"), col("b")))
         .insert((val(1_i32), val(2_i32)))
@@ -226,7 +228,7 @@ fn merge_all_requires_known_columns_and_populates_assignments() {
 #[test]
 fn combine_upsert_with_returning_variants() {
     // RETURNING один столбец
-    let one = QueryBuilder::new_empty()
+    let one = QB::new_empty()
         .into("users")
         .columns((col("email"), col("name")))
         .insert((val("a@ex.com"), val("Alice")))
@@ -236,7 +238,7 @@ fn combine_upsert_with_returning_variants() {
     assert_eq!(one.returning.len(), 1);
 
     // RETURNING *
-    let all = QueryBuilder::new_empty()
+    let all = QB::new_empty()
         .into("users")
         .columns((col("email"),))
         .insert((val("a@ex.com"),))
@@ -247,7 +249,7 @@ fn combine_upsert_with_returning_variants() {
         .expect("RETURNING * must be Wildcard");
 
     // RETURNING t.*
-    let q = QueryBuilder::new_empty()
+    let q = QB::new_empty()
         .into("t")
         .insert((col("id"), val(1_i32)))
         .returning_all_from("t");

@@ -18,7 +18,7 @@ impl OrderByNode {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// ORDER BY <expr1>, <expr2>, ...
     ///
     /// Поддерживает:
@@ -27,7 +27,7 @@ impl QueryBuilder {
     /// - ⛔ `QueryBuilder`/замыкания — не поддерживаются в ORDER BY (фиксируем ошибку)
     pub fn order_by<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         let items = args.into_vec();
         if items.is_empty() {

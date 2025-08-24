@@ -2,6 +2,8 @@ use super::super::super::*;
 use crate::expression::helpers::{col, val};
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr, Query, SetExpr};
 
+type QB = QueryBuilder<'static, ()>;
+
 /// Аккуратно достаём HAVING из AST
 fn extract_having(q: &Query) -> Option<&SqlExpr> {
     match q.body.as_ref() {
@@ -13,7 +15,7 @@ fn extract_having(q: &Query) -> Option<&SqlExpr> {
 #[test]
 fn having_between_and_not_between() {
     // HAVING x BETWEEN 10 AND 20
-    let qb1 = QueryBuilder::new_empty()
+    let qb1 = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -28,7 +30,7 @@ fn having_between_and_not_between() {
     }
 
     // HAVING x NOT BETWEEN 10 AND 20
-    let qb2 = QueryBuilder::new_empty()
+    let qb2 = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -45,7 +47,7 @@ fn having_between_and_not_between() {
 
 #[test]
 fn or_having_between_combines_with_or() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -74,7 +76,7 @@ fn or_having_between_combines_with_or() {
 
 #[test]
 fn or_having_not_between_combines_with_or() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -98,7 +100,7 @@ fn or_having_not_between_combines_with_or() {
 #[test]
 fn having_between_collects_params_only_from_bounds() {
     // target без параметров, границы через val(..) — должно быть 2 параметра
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))

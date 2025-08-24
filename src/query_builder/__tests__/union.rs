@@ -1,7 +1,10 @@
 use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
 use crate::tests::dialect_test_helpers::qi;
+use crate::type_helpers::QBClosureHelper;
 use sqlparser::ast::{SetExpr, SetOperator, SetQuantifier};
+
+type QB = QueryBuilder<'static, ()>;
 
 fn norm(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -10,10 +13,10 @@ fn norm(s: &str) -> String {
 #[test]
 fn union_basic_sql_contains_union() {
     // SELECT id FROM a UNION SELECT id FROM b
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .from("a")
         .select((col("id"),))
-        .union(|q: QueryBuilder| q.from("b").select((col("id"),)))
+        .union::<QBClosureHelper<()>>(|q| q.from("b").select((col("id"),)))
         .to_sql()
         .expect("to_sql");
 
@@ -28,10 +31,10 @@ fn union_basic_sql_contains_union() {
 #[test]
 fn union_all_sql_contains_union_all() {
     // SELECT id FROM a UNION ALL SELECT id FROM b
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .from("a")
         .select((col("id"),))
-        .union_all(|q: QueryBuilder| q.from("b").select((col("id"),)))
+        .union_all::<QBClosureHelper<()>>(|q| q.from("b").select((col("id"),)))
         .to_sql()
         .expect("to_sql");
 
@@ -44,10 +47,10 @@ fn union_all_sql_contains_union_all() {
 
 #[test]
 fn union_builds_setexpr_ast() {
-    let (q, _params) = QueryBuilder::new_empty()
+    let (q, _params) = QB::new_empty()
         .from("a")
         .select((col("id"),))
-        .union(|q: QueryBuilder| q.from("b").select((col("id"),)))
+        .union::<QBClosureHelper<()>>(|q| q.from("b").select((col("id"),)))
         .build_query_ast()
         .expect("build");
 
@@ -76,11 +79,11 @@ fn union_builds_setexpr_ast() {
 #[test]
 fn union_chain_left_associative_and_quantifiers() {
     // (A UNION B) UNION ALL C
-    let (q, _params) = QueryBuilder::new_empty()
+    let (q, _params) = QB::new_empty()
         .from("a")
         .select((col("id"),))
-        .union(|q: QueryBuilder| q.from("b").select((col("id"),)))
-        .union_all(|q: QueryBuilder| q.from("c").select((col("id"),)))
+        .union::<QBClosureHelper<()>>(|q| q.from("b").select((col("id"),)))
+        .union_all::<QBClosureHelper<()>>(|q| q.from("c").select((col("id"),)))
         .build_query_ast()
         .expect("build");
 
@@ -116,9 +119,9 @@ fn union_chain_left_associative_and_quantifiers() {
 #[test]
 fn union_params_bubble_in_order() {
     // LEFT has $1=10, RIGHT has $2=20 → итог: [10, 20]
-    let (_q, params) = QueryBuilder::new_empty()
+    let (_q, params) = QB::new_empty()
         .select((val(10i32),))
-        .union(|q: QueryBuilder| q.select((val(20i32),)))
+        .union::<QBClosureHelper<()>>(|q| q.select((val(20i32),)))
         .build_query_ast()
         .expect("build");
     assert_eq!(params.len(), 2);
@@ -127,10 +130,10 @@ fn union_params_bubble_in_order() {
 #[test]
 fn order_by_applies_to_entire_set() {
     // (SELECT id FROM a UNION ALL SELECT id FROM b) ORDER BY id ASC
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .from("a")
         .select((col("id"),))
-        .union_all(|q: QueryBuilder| q.from("b").select((col("id"),)))
+        .union_all::<QBClosureHelper<()>>(|q| q.from("b").select((col("id"),)))
         .order_by(("id", "asc"))
         .to_sql()
         .expect("to_sql");
@@ -147,11 +150,11 @@ fn order_by_applies_to_entire_set() {
 #[test]
 fn union_with_quoted_identifiers() {
     // Проверим, что имя CTE/таблицы корректно квотится рядом с UNION
-    let (sql, _params) = QueryBuilder::new_empty()
-        .with("u", |q: QueryBuilder| q.from("users").select((col("id"),)))
+    let (sql, _params) = QB::new_empty()
+        .with::<QBClosureHelper<()>>("u", |q| q.from("users").select((col("id"),)))
         .from("u")
         .select((col("id"),))
-        .union(|q: QueryBuilder| q.from("u").select((col("id"),)))
+        .union::<QBClosureHelper<()>>(|q| q.from("u").select((col("id"),)))
         .to_sql()
         .expect("to_sql");
     let s = norm(&sql);

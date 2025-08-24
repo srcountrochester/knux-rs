@@ -1,19 +1,38 @@
+use std::marker::PhantomData;
+use std::pin::Pin;
+
+use crate::executor::{DbPool, DbRow, Error as ExecError, Result as ExecResult};
 use crate::param::Param;
+use crate::query_builder::ExecCtx;
 use crate::query_builder::insert::utils::expr_last_ident;
 use crate::query_builder::{
     QueryBuilder,
     args::{ArgList, QBArg},
 };
 use crate::renderer::Dialect;
-use crate::utils::{expr_to_object_name, object_name_from_default};
+use crate::utils::expr_to_object_name;
 use smallvec::SmallVec;
 use sqlparser::ast::{Expr as SqlExpr, Ident, ObjectName, SelectItem};
+
+#[cfg(feature = "mysql")]
+use crate::executor::utils::fetch_typed_mysql;
+#[cfg(feature = "postgres")]
+use crate::executor::utils::fetch_typed_pg;
+#[cfg(feature = "sqlite")]
+use crate::executor::utils::fetch_typed_sqlite;
+
+#[cfg(feature = "mysql")]
+use crate::executor::transaction_utils::fetch_typed_mysql_exec;
+#[cfg(feature = "postgres")]
+use crate::executor::transaction_utils::fetch_typed_pg_exec;
+#[cfg(feature = "sqlite")]
+use crate::executor::transaction_utils::fetch_typed_sqlite_exec;
 
 use super::utils::{ConflictSpec, InsertRowNode};
 
 /// Билдер INSERT INTO ... VALUES ...
-#[derive(Debug, Clone)]
-pub struct InsertBuilder {
+#[derive(Debug)]
+pub struct InsertBuilder<'a, T = ()> {
     pub(crate) table: Option<ObjectName>,
     pub(crate) columns: SmallVec<[Ident; 8]>,
     pub(crate) rows: SmallVec<[InsertRowNode; 1]>,
@@ -28,11 +47,13 @@ pub struct InsertBuilder {
     // контекст (для резолва подзапросов в значениях)
     pub(crate) default_schema: Option<String>,
     pub(crate) dialect: Dialect,
+    pub(crate) exec_ctx: ExecCtx<'a>,
+    _t: PhantomData<T>,
 }
 
-impl InsertBuilder {
+impl<'a, T> InsertBuilder<'a, T> {
     #[inline]
-    pub(crate) fn from_qb(qb: QueryBuilder) -> Self {
+    pub(crate) fn from_qb(qb: QueryBuilder<'a, T>) -> Self {
         Self {
             table: None,
             columns: SmallVec::new(),
@@ -44,6 +65,8 @@ impl InsertBuilder {
             returning: SmallVec::new(),
             on_conflict: None,
             insert_ignore: false,
+            exec_ctx: qb.exec_ctx,
+            _t: PhantomData,
         }
     }
 
@@ -51,7 +74,7 @@ impl InsertBuilder {
     #[inline]
     pub fn into<L>(mut self, table_arg: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let mut args = table_arg.into_vec();
         if args.is_empty() {
@@ -80,7 +103,7 @@ impl InsertBuilder {
     /// Явно задать список колонок: `INSERT INTO t (c1, c2, ...)`
     pub fn columns<L>(mut self, cols: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let items = cols.into_vec();
         if items.is_empty() {
@@ -103,7 +126,7 @@ impl InsertBuilder {
     /// Данные для вставки.
     pub fn insert<L>(mut self, data: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let items = data.into_vec();
 
@@ -157,6 +180,38 @@ impl InsertBuilder {
         }
 
         self
+    }
+
+    /// Выполнить INSERT **без** `RETURNING`. Возвращает `rows_affected`.
+    pub async fn exec(mut self) -> ExecResult<u64> {
+        let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+        let exec_ctx = self.exec_ctx;
+
+        match exec_ctx {
+            ExecCtx::None => Err(ExecError::MissingConnection),
+
+            ExecCtx::Pool(pool) => match pool {
+                #[cfg(feature = "postgres")]
+                DbPool::Postgres(p) => crate::executor::utils::execute_pg(&p, &sql, params).await,
+                #[cfg(feature = "mysql")]
+                DbPool::MySql(p) => crate::executor::utils::execute_mysql(&p, &sql, params).await,
+                #[cfg(feature = "sqlite")]
+                DbPool::Sqlite(p) => crate::executor::utils::execute_sqlite(&p, &sql, params).await,
+            },
+
+            #[cfg(feature = "postgres")]
+            ExecCtx::PgConn(conn) => {
+                crate::executor::transaction_utils::execute_pg_exec(conn, &sql, params).await
+            }
+            #[cfg(feature = "mysql")]
+            ExecCtx::MySqlConn(conn) => {
+                crate::executor::transaction_utils::execute_mysql_exec(conn, &sql, params).await
+            }
+            #[cfg(feature = "sqlite")]
+            ExecCtx::SqliteConn(conn) => {
+                crate::executor::transaction_utils::execute_sqlite_exec(conn, &sql, params).await
+            }
+        }
     }
 
     // ===== вспомогательные =====
@@ -234,20 +289,80 @@ impl InsertBuilder {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// Начать INSERT сразу с данными (таблицу можно указать потом через .into())
-    pub fn insert<L>(self, row_or_values: L) -> InsertBuilder
+    pub fn insert<L>(self, row_or_values: L) -> InsertBuilder<'a, T>
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         InsertBuilder::from_qb(self).insert(row_or_values)
     }
 
     /// Начать INSERT с указанием таблицы (данные можно передать потом через .insert(...))
-    pub fn into<L>(self, table_arg: L) -> InsertBuilder
+    pub fn into<L>(self, table_arg: L) -> InsertBuilder<'a, T>
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         InsertBuilder::from_qb(self).into(table_arg)
+    }
+}
+
+impl<'a, T> std::future::IntoFuture for InsertBuilder<'a, T>
+where
+    T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'a,
+{
+    type Output = ExecResult<Vec<T>>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+
+    fn into_future(mut self) -> Self::IntoFuture {
+        Box::pin(async move {
+            // Без RETURNING «ожидать» нельзя — используйте .exec()
+            if self.returning.is_empty() {
+                return Err(ExecError::Unsupported(
+                    "INSERT без RETURNING: используйте .exec(). Для чтения результатов добавьте .returning(...).".into()
+                ));
+            }
+            let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+
+            match self.exec_ctx {
+                ExecCtx::None => Err(ExecError::MissingConnection),
+
+                // ---- исполнение через пул ----
+                ExecCtx::Pool(pool) => match pool {
+                    #[cfg(feature = "postgres")]
+                    DbPool::Postgres(p) => fetch_typed_pg::<T>(&p, &sql, params)
+                        .await
+                        .map_err(Into::into),
+                    #[cfg(feature = "mysql")]
+                    DbPool::MySql(p) => {
+                        // В MySQL UPDATE … RETURNING нет — отдаём понятную ошибку
+                        Err(ExecError::Unsupported(
+                            "MySQL не поддерживает INSERT ... RETURNING; выполните .exec() и, при необходимости, отдельный SELECT."
+                                .into(),
+                        ))
+                    }
+                    #[cfg(feature = "sqlite")]
+                    DbPool::Sqlite(p) => fetch_typed_sqlite::<T>(&p, &sql, params)
+                        .await
+                        .map_err(Into::into),
+                },
+
+                // ---- исполнение ВНУТРИ транзакции ----
+                #[cfg(feature = "postgres")]
+                ExecCtx::PgConn(conn) => fetch_typed_pg_exec::<_, T>(conn, &sql, params).await,
+                #[cfg(feature = "mysql")]
+                ExecCtx::MySqlConn(conn) => {
+                    // В MySQL UPDATE … RETURNING нет — отдаём понятную ошибку
+                    Err(ExecError::Unsupported(
+                        "MySQL не поддерживает INSERT ... RETURNING; выполните .exec() и, при необходимости, отдельный SELECT."
+                            .into(),
+                    ))
+                }
+                #[cfg(feature = "sqlite")]
+                ExecCtx::SqliteConn(conn) => {
+                    fetch_typed_sqlite_exec::<_, T>(conn, &sql, params).await
+                }
+            }
+        })
     }
 }

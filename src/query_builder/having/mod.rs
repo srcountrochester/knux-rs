@@ -12,11 +12,11 @@ use crate::query_builder::args::ArgList;
 pub(crate) use core_fn::HavingNode;
 use smallvec::SmallVec;
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// HAVING <exprs...>  (группа объединяется через AND)
     pub fn having<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         if let Some((pred, params)) = self.resolve_having_group(args) {
             self.attach_having_with_and(pred, params);
@@ -27,7 +27,7 @@ impl QueryBuilder {
     /// OR HAVING <exprs...>  (группа объединяется через AND, затем OR с текущим having)
     pub fn or_having<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         if let Some((pred, params)) = self.resolve_having_group(args) {
             self.attach_having_with_or(pred, params);
@@ -55,7 +55,7 @@ impl QueryBuilder {
 
     pub fn and_having<A>(self, args: A) -> Self
     where
-        A: crate::query_builder::args::ArgList,
+        A: ArgList<'a>,
     {
         self.having(args)
     }

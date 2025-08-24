@@ -3,9 +3,10 @@ use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr};
 
+type QB = QueryBuilder<'static, ()>;
 #[test]
 fn where_raw_parses_sql() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_raw("users.id = 1 AND users.is_active");
@@ -17,7 +18,7 @@ fn where_raw_parses_sql() {
 #[test]
 fn or_where_raw_appends_with_or() {
     // (a = 1) OR (b > 2)
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("a").eq(val(1)))
@@ -45,7 +46,7 @@ fn or_where_raw_appends_with_or() {
 #[test]
 fn where_raw_invalid_sql_records_builder_error() {
     // Заведомо невалидное where-выражение
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_raw("a = 1 AND"); // парсер упадёт
@@ -60,7 +61,7 @@ fn where_raw_invalid_sql_records_builder_error() {
 
 #[test]
 fn or_where_raw_invalid_sql_records_builder_error() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("a").eq(val(1)))
@@ -77,7 +78,7 @@ fn or_where_raw_invalid_sql_records_builder_error() {
 #[test]
 fn multiple_where_raw_calls_chain_with_and() {
     // where_raw + where_raw → склейка AND
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_raw("a = 1")

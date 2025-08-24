@@ -10,6 +10,9 @@ pub enum Error {
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 
+    #[error(transparent)]
+    QueryBuild(#[from] crate::query_builder::Error),
+
     #[error("Invalid DSN URL: {0}")]
     InvalidUrl(url::ParseError),
 
@@ -36,4 +39,10 @@ pub enum Error {
 
     #[error("Invalid database mode")]
     InvalidDBMode,
+
+    #[error("Record not found in DB")]
+    NotFound,
+
+    #[error("Unsupported: {0}")]
+    Unsupported(Cow<'static, str>),
 }

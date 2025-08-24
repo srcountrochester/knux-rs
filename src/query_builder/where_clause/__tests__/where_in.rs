@@ -1,11 +1,14 @@
 use super::extract_where;
+use crate::expression::Expression;
 use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
+use crate::type_helpers::QBClosureHelper;
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr};
 
+type QB = QueryBuilder<'static, ()>;
 #[test]
 fn where_in_with_list() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_in(col("id"), (val(1), val(2), val(3)));
@@ -16,8 +19,8 @@ fn where_in_with_list() {
 
 #[test]
 fn where_in_with_subquery() {
-    let sub = QueryBuilder::new_empty().from("orders").select("user_id");
-    let qb = QueryBuilder::new_empty()
+    let sub = QB::new_empty().from("orders").select("user_id");
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_in(col("id"), sub);
@@ -29,7 +32,7 @@ fn where_in_with_subquery() {
 #[test]
 fn or_where_in_appends_with_or() {
     // (a = 1) OR id IN (1,2)
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("a").eq(val(1)))
@@ -56,7 +59,7 @@ fn or_where_in_appends_with_or() {
 
 #[test]
 fn where_not_in_sets_negated() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_not_in(col("id"), (val(1), val(2), val(3)));
@@ -72,7 +75,7 @@ fn where_not_in_sets_negated() {
 #[test]
 fn or_where_not_in_sets_negated_and_or() {
     // (a = 1) OR id NOT IN (1,2,3)
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("a").eq(val(1)))
@@ -98,10 +101,10 @@ fn or_where_not_in_sets_negated_and_or() {
 
 #[test]
 fn where_in_accepts_closure_subquery() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
-        .where_in(col("id"), |qb: QueryBuilder| {
+        .where_in::<Expression, QBClosureHelper<()>>(col("id"), |qb| {
             qb.from("orders").select("user_id")
         });
 
@@ -112,7 +115,7 @@ fn where_in_accepts_closure_subquery() {
 
 #[test]
 fn where_in_accepts_str_column_via_into_qbarg() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_in("id", (val(10), val(20)));

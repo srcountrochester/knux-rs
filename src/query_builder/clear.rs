@@ -1,6 +1,6 @@
 use crate::query_builder::QueryBuilder;
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// Универсальный сброс части запроса.
     ///
     /// Поддерживаемые значения:

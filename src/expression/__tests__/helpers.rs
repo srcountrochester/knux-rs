@@ -142,3 +142,27 @@ fn schema_helper_produces_identifier() {
         other => panic!("expected Identifier, got {:?}", other),
     }
 }
+
+#[test]
+fn raw_count_star_yields_function_not_string() {
+    let (expr, _, _) = raw("COUNT(*)").__into_parts();
+    match expr {
+        ast::Expr::Function(fun) => {
+            // убеждаемся, что это COUNT(*) (аргумент — wildcard)
+            assert_eq!(fun.name.0.len(), 1);
+            match &fun.args {
+                ast::FunctionArguments::List(list) => {
+                    assert!(!list.args.is_empty());
+                }
+                _ => panic!("COUNT(*) should have args list"),
+            }
+        }
+        other => panic!("expected function, got {:?}", other),
+    }
+}
+
+#[test]
+fn raw_qualified_wildcard_is_not_quoted() {
+    let (expr, _, _) = raw("t.*").__into_parts();
+    assert!(matches!(expr, ast::Expr::QualifiedWildcard(_, _)));
+}

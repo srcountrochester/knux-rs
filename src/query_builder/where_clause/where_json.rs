@@ -10,7 +10,7 @@ use crate::{
     renderer::Dialect,
 };
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// WHERE <col> contains <json-obj>
     pub fn where_json_object(mut self, col: &str, json: &str) -> Self {
         let sql = match self.dialect {

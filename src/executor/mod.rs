@@ -1,7 +1,9 @@
 mod __tests__;
 mod config;
 mod error;
-mod utils;
+pub mod transaction;
+pub mod transaction_utils;
+pub mod utils;
 
 use sqlx::Executor;
 #[cfg(feature = "mysql")]
@@ -19,16 +21,16 @@ use crate::executor::utils::fetch_typed_pg;
 use crate::executor::utils::fetch_typed_sqlite;
 
 use crate::{param::Param, query_builder::QueryBuilder};
-use config::ExecutorConfig;
+pub use config::ExecutorConfig;
 pub use error::{Error, Result};
 
 // ВЕРХ ФАЙЛА: алиасы под активную БД
 #[cfg(feature = "postgres")]
-type DbRow = PgRow;
+pub type DbRow = PgRow;
 #[cfg(feature = "mysql")]
-type DbRow = MySqlRow;
+pub type DbRow = MySqlRow;
 #[cfg(feature = "sqlite")]
-type DbRow = SqliteRow;
+pub type DbRow = SqliteRow;
 
 #[derive(Clone, Debug)]
 pub enum DbPool {
@@ -205,55 +207,9 @@ impl QueryExecutor {
     }
 
     /// Начать строить запрос (интерфейс дальше останется как у knex-подобного билдера).
-    pub fn query(&self) -> QueryBuilder {
-        QueryBuilder::new(self.pool.clone(), self.schema.clone())
+    pub fn query<T>(&self) -> QueryBuilder<'static, T> {
+        QueryBuilder::new_pool(self.pool.clone(), self.schema.clone())
     }
-
-    // #[cfg(feature = "sqlite")]
-    // /// Выполнить типизированный SELECT с привязкой параметров.
-    // pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
-    // where
-    //     for<'r> T: sqlx::FromRow<'r, SqliteRow> + Send + Unpin,
-    // {
-    //     match &self.pool {
-    //         #[cfg(feature = "sqlite")]
-    //         DbPool::Sqlite(pool) => fetch_typed_sqlite::<T>(pool, sql, params)
-    //             .await
-    //             .map_err(Into::into),
-
-    //         _ => Err(Error::InvalidDBMode),
-    //     }
-    // }
-
-    // #[cfg(feature = "postgres")]
-    // pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
-    // where
-    //     for<'r> T: sqlx::FromRow<'r, PgRow> + Send + Unpin,
-    // {
-    //     match &self.pool {
-    //         #[cfg(feature = "postgres")]
-    //         DbPool::Postgres(pool) => fetch_typed_pg::<T>(pool, sql, params)
-    //             .await
-    //             .map_err(Into::into),
-
-    //         _ => Err(Error::InvalidDBMode),
-    //     }
-    // }
-
-    // #[cfg(feature = "mysql")]
-    // pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
-    // where
-    //     for<'r> T: sqlx::FromRow<'r, MySqlRow> + Send + Unpin,
-    // {
-    //     match &self.pool {
-    //         #[cfg(feature = "mysql")]
-    //         DbPool::MySql(pool) => fetch_typed_mysql::<T>(pool, sql, params)
-    //             .await
-    //             .map_err(Into::into),
-
-    //         _ => Err(Error::InvalidDBMode),
-    //     }
-    // }
 
     pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>
     where

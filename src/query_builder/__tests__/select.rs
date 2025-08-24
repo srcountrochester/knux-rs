@@ -2,12 +2,16 @@ use sqlparser::ast;
 use sqlparser::ast::SelectItem;
 
 use crate::expression::helpers::{col, val};
+use crate::expression::raw;
 use crate::param::Param;
 use crate::query_builder::QueryBuilder;
+use crate::type_helpers::QBClosureHelper;
+
+type QB = QueryBuilder<'static, ()>;
 
 #[test]
 fn select_with_string_items_builds_unnamed_exprs() {
-    let qb = QueryBuilder::new_empty().select(&["id", "users.name"]);
+    let qb = QB::new_empty().select(&["id", "users.name"]);
 
     assert_eq!(qb.select_items.len(), 2, "should have two select items");
 
@@ -38,7 +42,7 @@ fn select_with_string_items_builds_unnamed_exprs() {
 #[test]
 fn select_with_expression_and_alias_preserves_alias_and_params() {
     // val(100) даёт placeholder и один параметр; ставим алиас
-    let qb = QueryBuilder::new_empty().select((val(100i32).alias("p"),));
+    let qb = QB::new_empty().select((val(100i32).alias("p"),));
 
     assert_eq!(qb.select_items.len(), 1);
 
@@ -70,7 +74,7 @@ fn select_with_expression_and_alias_preserves_alias_and_params() {
 #[test]
 fn select_tuple_mixed_types_keeps_order_and_alias() {
     // кортеж → ArgList (без .into())
-    let qb = QueryBuilder::new_empty().select(("id", col("name").alias("n")));
+    let qb = QB::new_empty().select(("id", col("name").alias("n")));
 
     assert_eq!(qb.select_items.len(), 2);
 
@@ -100,14 +104,14 @@ fn select_tuple_mixed_types_keeps_order_and_alias() {
 #[test]
 fn select_vec_of_strs_and_slice_work() {
     // Vec<&str>
-    let qb1 = QueryBuilder::new_empty().select(vec!["a", "b"]);
+    let qb1 = QB::new_empty().select(vec!["a", "b"]);
     assert_eq!(qb1.select_items.len(), 2);
     assert!(qb1.select_items.iter().all(|n| n.params.is_empty()));
     assert!(qb1.params.is_empty());
 
     // &[] с IntoQBArg + Clone
     let items: &[&str] = &["x", "y", "z"];
-    let qb2 = QueryBuilder::new_empty().select(items);
+    let qb2 = QB::new_empty().select(items);
     assert_eq!(qb2.select_items.len(), 3);
     assert!(qb2.select_items.iter().all(|n| n.params.is_empty()));
     assert!(qb2.params.is_empty());
@@ -116,10 +120,11 @@ fn select_vec_of_strs_and_slice_work() {
 #[test]
 fn select_subquery_and_closure_expand_into_subqueries() {
     // subquery: SELECT x
-    let sub = QueryBuilder::new_empty().select(("x",));
+    let sub = QB::new_empty().select(("x",));
+    let scalar_subq: QBClosureHelper<()> = |q| q.select(("y",));
 
     // closure-subquery: SELECT y
-    let qb = QueryBuilder::new_empty().select((sub, |q: QueryBuilder| q.select(("y",))));
+    let qb = QB::new_empty().select((sub, scalar_subq));
 
     // теперь должно быть ДВА элемента: оба — подзапросы
     assert_eq!(qb.select_items.len(), 2);
@@ -135,4 +140,21 @@ fn select_subquery_and_closure_expand_into_subqueries() {
 
     // общий буфер параметров до сборки пуст
     assert!(qb.params.is_empty());
+}
+
+#[test]
+fn select_raw_count_star_renders_plain_sql_without_quotes() {
+    let qb = QB::new_empty().select(raw("COUNT(*)")).from("users");
+    let (sql, params) = qb.to_sql().unwrap();
+
+    assert!(sql.contains("SELECT COUNT(*) FROM"));
+    assert!(!sql.contains("\"COUNT(*)\""));
+    assert!(params.is_empty());
+}
+
+#[test]
+fn select_col_star_count_renders_count_star() {
+    let qb = QB::new_empty().select(col("*").count()).from("users");
+    let (sql, _params) = qb.to_sql().unwrap();
+    assert!(sql.contains("SELECT COUNT(*) FROM"));
 }

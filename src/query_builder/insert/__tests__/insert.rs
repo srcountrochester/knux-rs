@@ -1,6 +1,9 @@
 use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
+use crate::type_helpers::QBClosureHelper;
 use sqlparser::ast::{Ident, ObjectName};
+
+type QB = QueryBuilder<'static, ()>;
 
 fn ident_list_to_vec(cols: &[Ident]) -> Vec<String> {
     cols.iter().map(|i| i.value.clone()).collect()
@@ -8,7 +11,7 @@ fn ident_list_to_vec(cols: &[Ident]) -> Vec<String> {
 
 #[test]
 fn insert_single_row_from_pairs() {
-    let ins = QueryBuilder::new_empty().into("users").insert((
+    let ins = QB::new_empty().into("users").insert((
         col("id"),
         val(1_i32),
         col("name"),
@@ -40,7 +43,7 @@ fn insert_single_row_from_pairs() {
 #[test]
 fn insert_single_column_many_values_multiple_rows() {
     // одна колонка: каждое значение -> отдельная строка
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("tags")
         .columns((col("name"),))
         .insert((val("red"), val("green"), val("blue")));
@@ -58,7 +61,7 @@ fn insert_single_column_many_values_multiple_rows() {
 #[test]
 fn insert_multi_columns_chunked_into_rows() {
     // 2 колонки: 6 значений -> 3 строки по 2 значения
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("accounts")
         .columns((col("email"), col("is_active")))
         .insert((
@@ -84,7 +87,7 @@ fn insert_multi_columns_chunked_into_rows() {
 #[test]
 fn insert_columns_exactly_one_row_when_counts_match() {
     // если количество значений == количеству колонок -> одна строка
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("kv")
         .columns((col("k"), col("v")))
         .insert((val("lang"), val("ru")));
@@ -96,7 +99,7 @@ fn insert_columns_exactly_one_row_when_counts_match() {
 #[test]
 fn insert_error_mismatch_values_count() {
     // 2 колонки, а значений 3 -> ошибка
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("kv")
         .columns((col("k"), col("v")))
         .insert((val("a"), val("b"), val("c")));
@@ -109,7 +112,7 @@ fn insert_error_mismatch_values_count() {
 #[test]
 fn insert_error_odd_pairs_without_defined_columns() {
     // без columns() ожидаем пары (col, value)
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("users")
         .insert((col("id"), val(1_i32), col("name"))); // нечётное число => ошибка
     assert!(!ins.builder_errors.is_empty());
@@ -118,7 +121,7 @@ fn insert_error_odd_pairs_without_defined_columns() {
 #[test]
 fn insert_column_identifier_can_be_compound_uses_last_segment() {
     // колонка как compound identifier: возьмём последний сегмент
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("t")
         .insert((col("public.users.id"), val(10_i32)));
     assert_eq!(ident_list_to_vec(&ins.columns), vec!["id".to_string()]);
@@ -129,14 +132,16 @@ fn insert_column_identifier_can_be_compound_uses_last_segment() {
 #[test]
 fn insert_value_can_be_scalar_subquery_and_params_order_is_preserved() {
     // subquery с параметром + обычный параметр => порядок: [subquery_param, value_param]
-    let ins = QueryBuilder::new_empty().into("audit").insert((
+    let scalar_subq: QBClosureHelper<()> = |q| {
+        q.from("users")
+            .select((col("id"),))
+            .r#where(col("email").eq(val("bob@example.com")))
+            .limit(1)
+    };
+
+    let ins = QB::new_empty().into("audit").insert((
         col("user_id"),
-        |q: QueryBuilder| {
-            q.from("users")
-                .select((col("id"),))
-                .r#where(col("email").eq(val("bob@example.com")))
-                .limit(1)
-        },
+        scalar_subq,
         col("action"),
         val("login"),
     ));
@@ -153,7 +158,7 @@ fn insert_value_can_be_scalar_subquery_and_params_order_is_preserved() {
 #[test]
 fn into_parses_schema_table_into_object_name() {
     // schema.table
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("crm.contacts")
         .insert((col("id"), val(1_i32)));
     let name = ins.table.as_ref().expect("table set").to_string();
@@ -167,7 +172,7 @@ fn into_parses_schema_table_into_object_name() {
 #[test]
 fn insert_params_across_multiple_rows_preserve_order() {
     // 2 колонки, 2 строки => 4 значения → 4 параметра; порядок — построчно, слева-направо
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("accounts")
         .columns((col("email"), col("active")))
         .insert((
@@ -188,7 +193,7 @@ fn insert_params_across_multiple_rows_preserve_order() {
 
 #[test]
 fn insert_one_column_many_values_becomes_many_rows() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("tags")
         .columns((col("name"),))
         .insert((val("red"), val("green"), val("blue")));
@@ -203,14 +208,16 @@ fn insert_one_column_many_values_becomes_many_rows() {
 
 #[test]
 fn insert_with_scalar_subquery_value_collects_params() {
-    let ins = QueryBuilder::new_empty().into("audit").insert((
+    let scalar_subq: QBClosureHelper<()> = |q| {
+        q.from("users")
+            .select((col("id"),))
+            .r#where(col("email").eq(val("bob@example.com")))
+            .limit(1)
+    };
+
+    let ins = QB::new_empty().into("audit").insert((
         col("user_id"),
-        |q: QueryBuilder| {
-            q.from("users")
-                .select((col("id"),))
-                .r#where(col("email").eq(val("bob@example.com")))
-                .limit(1)
-        },
+        scalar_subq,
         col("action"),
         val("login"),
     ));
@@ -226,7 +233,7 @@ fn insert_with_scalar_subquery_value_collects_params() {
 #[test]
 fn insert_columns_chunking_multiple_rows() {
     // 3 колонки, 6 значений → 2 строки по 3 значения
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("events")
         .columns((col("ts"), col("kind"), col("payload")))
         .insert((
@@ -250,7 +257,7 @@ fn insert_columns_chunking_multiple_rows() {
 // без columns() — нечётное число элементов => ошибка пар (col, value)
 #[test]
 fn insert_without_columns_odd_pairs_error() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("users")
         .insert((col("id"), val(1_i32), col("name"))); // пропущено значение
     assert!(
@@ -262,7 +269,7 @@ fn insert_without_columns_odd_pairs_error() {
 // columns заданы, но число values не кратно числу колонок => ошибка
 #[test]
 fn insert_values_count_mismatch_error() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("kv")
         .columns((col("k"), col("v")))
         .insert((val("a"), val("b"), val("extra")));
@@ -275,7 +282,7 @@ fn insert_values_count_mismatch_error() {
 // compound identifier для колонки: используем последний сегмент
 #[test]
 fn insert_compound_identifier_column_uses_last_segment() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("t")
         .insert((col("public.users.id"), val(10_i32)));
     assert_eq!(ident_list_to_vec(&ins.columns), vec!["id"]);
@@ -286,7 +293,7 @@ fn insert_compound_identifier_column_uses_last_segment() {
 
 #[test]
 fn insert_no_columns_empty_data_error() {
-    let ins = QueryBuilder::new_empty().into("users").insert(()); // пусто
+    let ins = QB::new_empty().into("users").insert(()); // пусто
     assert!(
         !ins.builder_errors.is_empty(),
         "expected error: empty data without columns"
@@ -295,7 +302,7 @@ fn insert_no_columns_empty_data_error() {
 
 #[test]
 fn insert_columns_empty_list_error() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("users")
         .columns(()) // пустой список колонок
         .insert((val(1_i32),));
@@ -309,7 +316,7 @@ fn insert_columns_empty_list_error() {
 
 #[test]
 fn into_parses_schema_table_object_name() {
-    let ins = QueryBuilder::new_empty()
+    let ins = QB::new_empty()
         .into("crm.contacts")
         .insert((col("id"), val(1_i32)));
     let name = ins.table.as_ref().expect("table set").to_string();

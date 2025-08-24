@@ -2,11 +2,14 @@ use super::super::*;
 use crate::{
     expression::helpers::{col, val},
     tests::dialect_test_helpers::qi,
+    type_helpers::QBClosureHelper,
 };
+
+type QB = QueryBuilder<'static, ()>;
 
 #[test]
 fn group_by_single_and_multiple_columns() {
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .from("orders")
         .select(("user_id", "status"))
         .group_by(("user_id", "status"))
@@ -26,7 +29,7 @@ fn group_by_single_and_multiple_columns() {
 
 #[test]
 fn group_by_expression_collects_params() {
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .from("users")
         .select(("id",))
         .group_by(col("age").add(val(1)))
@@ -45,7 +48,7 @@ fn group_by_expression_collects_params() {
 #[test]
 fn group_by_ignores_empty_list() {
     let empty: Vec<&str> = Vec::new();
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .from("logs")
         .select(("*",))
         .group_by(empty) // пустой список должен игнорироваться
@@ -61,9 +64,9 @@ fn group_by_ignores_empty_list() {
 #[test]
 fn group_by_rejects_subquery() {
     // подзапрос в GROUP BY не поддерживается — должен быть builder error
-    let sub = QueryBuilder::new_empty().from("t").select(("x",));
+    let sub = QB::new_empty().from("t").select(("x",));
 
-    let err = QueryBuilder::new_empty()
+    let err = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(sub) // передаём подзапрос как аргумент
@@ -80,10 +83,10 @@ fn group_by_rejects_subquery() {
 #[test]
 fn group_by_rejects_closure() {
     // closure → тоже подзапрос, должен дать builder error
-    let err = QueryBuilder::new_empty()
+    let err = QB::new_empty()
         .from("t")
         .select(("x",))
-        .group_by(|qb: QueryBuilder| qb.from("u").select(("y",)))
+        .group_by::<QBClosureHelper<()>>(|qb| qb.from("u").select(("y",)))
         .to_sql()
         .unwrap_err();
 

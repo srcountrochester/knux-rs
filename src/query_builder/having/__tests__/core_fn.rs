@@ -2,6 +2,8 @@ use super::super::super::*;
 use crate::expression::helpers::{col, val};
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr, Query, SetExpr};
 
+type QB = QueryBuilder<'static, ()>;
+
 /// Аккуратный helper: достаём ссылку на HAVING из AST без лишних клонов.
 fn extract_having(q: &Query) -> Option<&SqlExpr> {
     match q.body.as_ref() {
@@ -12,7 +14,7 @@ fn extract_having(q: &Query) -> Option<&SqlExpr> {
 
 #[test]
 fn attach_having_with_and_accumulates() {
-    let mut qb = QueryBuilder::new_empty().from("t").select(("x",));
+    let mut qb = QB::new_empty().from("t").select(("x",));
 
     // expr1: sum > 10
     let e1 = col("sum").gt(val(10));
@@ -50,7 +52,7 @@ fn attach_having_with_and_accumulates() {
 
 #[test]
 fn attach_having_with_or_builds_or_tree() {
-    let mut qb = QueryBuilder::new_empty().from("t").select(("x",));
+    let mut qb = QB::new_empty().from("t").select(("x",));
 
     // cnt > 1
     let e1 = col("cnt").gt(val(1));
@@ -77,7 +79,7 @@ fn attach_having_with_or_builds_or_tree() {
 }
 #[test]
 fn resolve_having_group_and_attach_collects_params_and_chains_with_and() {
-    let mut qb = QueryBuilder::new_empty().from("t").select(("x",));
+    let mut qb = QB::new_empty().from("t").select(("x",));
 
     // группа из двух выражений -> внутри AND
     let (pred, params) = qb
@@ -102,7 +104,7 @@ fn resolve_having_group_and_attach_collects_params_and_chains_with_and() {
 
 #[test]
 fn resolve_having_group_empty_returns_none_and_changes_nothing() {
-    let mut qb = QueryBuilder::new_empty().from("t").select(("x",));
+    let mut qb = QB::new_empty().from("t").select(("x",));
 
     // пустой список аргументов — None
     let empty: Vec<&str> = Vec::new();

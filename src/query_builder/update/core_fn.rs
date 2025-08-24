@@ -1,6 +1,10 @@
-use crate::query_builder::QueryBuilder;
+use std::marker::PhantomData;
+use std::pin::Pin;
+
+use crate::executor::{DbPool, DbRow, Error as ExecError, Result as ExecResult};
 use crate::query_builder::args::{ArgList, QBArg};
 use crate::query_builder::ast::FromItem;
+use crate::query_builder::{ExecCtx, QueryBuilder};
 use crate::renderer::Dialect;
 use crate::{param::Param, utils::expr_to_object_name};
 use smallvec::{SmallVec, smallvec};
@@ -8,15 +12,29 @@ use sqlparser::ast::{Expr as SqlExpr, ObjectName, SelectItem, SqliteOnConflict};
 
 use super::set::parse_assignments_pairs;
 
+#[cfg(feature = "mysql")]
+use crate::executor::utils::fetch_typed_mysql;
+#[cfg(feature = "postgres")]
+use crate::executor::utils::fetch_typed_pg;
+#[cfg(feature = "sqlite")]
+use crate::executor::utils::fetch_typed_sqlite;
+
+#[cfg(feature = "mysql")]
+use crate::executor::transaction_utils::fetch_typed_mysql_exec;
+#[cfg(feature = "postgres")]
+use crate::executor::transaction_utils::fetch_typed_pg_exec;
+#[cfg(feature = "sqlite")]
+use crate::executor::transaction_utils::fetch_typed_sqlite_exec;
+
 /// Билдер UPDATE ... SET ... [WHERE ...] [RETURNING ...]
 #[derive(Debug)]
-pub struct UpdateBuilder {
+pub struct UpdateBuilder<'a, T> {
     pub(crate) table: Option<ObjectName>,
     pub(crate) set: SmallVec<[super::set::Assignment; 8]>,
     pub(crate) where_predicate: Option<SqlExpr>,
     pub(crate) params: SmallVec<[Param; 8]>,
     pub(crate) returning: SmallVec<[SelectItem; 4]>,
-    pub(crate) from_items: SmallVec<[FromItem; 2]>,
+    pub(crate) from_items: SmallVec<[FromItem<'a>; 2]>,
     pub(crate) sqlite_or: Option<SqliteOnConflict>,
 
     // ошибки сбора
@@ -25,11 +43,13 @@ pub struct UpdateBuilder {
     // контекст
     pub(crate) default_schema: Option<String>,
     pub(crate) dialect: Dialect,
+    pub(crate) exec_ctx: ExecCtx<'a>,
+    _t: PhantomData<T>,
 }
 
-impl UpdateBuilder {
+impl<'a, T> UpdateBuilder<'a, T> {
     #[inline]
-    pub(crate) fn from_qb(qb: QueryBuilder) -> Self {
+    pub(crate) fn from_qb(qb: QueryBuilder<'a, T>) -> Self {
         Self {
             table: None,
             set: smallvec![],
@@ -42,13 +62,15 @@ impl UpdateBuilder {
 
             from_items: smallvec![],
             sqlite_or: None,
+            exec_ctx: qb.exec_ctx,
+            _t: PhantomData,
         }
     }
 
     /// SET (col1, val1, col2, val2, ...)
     pub fn set<L>(mut self, assignments: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let flat = assignments.into_vec();
         match parse_assignments_pairs(&mut self.params, flat) {
@@ -61,7 +83,7 @@ impl UpdateBuilder {
     /// WHERE <expr>[, <expr2>, ...] — элементы связываются AND
     pub fn r#where<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         match self.resolve_where_group(args) {
             Ok(Some((expr, params))) => {
@@ -73,10 +95,18 @@ impl UpdateBuilder {
         self
     }
 
+    /// WHERE <expr>[, <expr2>, ...] — элементы связываются AND
+    pub fn where_<A>(self, args: A) -> Self
+    where
+        A: ArgList<'a>,
+    {
+        self.r#where(args)
+    }
+
     /// RETURNING <expr, ...> (PG/SQLite; в MySQL будет проигнорировано на рендере)
     pub fn returning<L>(mut self, items: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         if let Err(msg) = super::returning::push_returning_list(&mut self.returning, items) {
             self.push_builder_error(msg);
@@ -87,7 +117,7 @@ impl UpdateBuilder {
     /// RETURNING один элемент, перезаписывает предыдущий список
     pub fn returning_one<L>(mut self, item: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         if let Err(msg) = super::returning::set_returning_one(&mut self.returning, item) {
             self.push_builder_error(msg);
@@ -110,7 +140,7 @@ impl UpdateBuilder {
     /// FROM <tables | (subquery)> — как в QueryBuilder::from(...)
     pub fn from<L>(mut self, items: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let args = items.into_vec();
         self.from_items.reserve(args.len());
@@ -137,6 +167,38 @@ impl UpdateBuilder {
             }
         }
         self
+    }
+
+    /// Выполнить UPDATE без RETURNING и вернуть rows_affected.
+    pub async fn exec(mut self) -> ExecResult<u64> {
+        let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+        let exec_ctx = self.exec_ctx;
+
+        match exec_ctx {
+            ExecCtx::None => Err(ExecError::MissingConnection),
+
+            ExecCtx::Pool(pool) => match pool {
+                #[cfg(feature = "postgres")]
+                DbPool::Postgres(p) => crate::executor::utils::execute_pg(&p, &sql, params).await,
+                #[cfg(feature = "mysql")]
+                DbPool::MySql(p) => crate::executor::utils::execute_mysql(&p, &sql, params).await,
+                #[cfg(feature = "sqlite")]
+                DbPool::Sqlite(p) => crate::executor::utils::execute_sqlite(&p, &sql, params).await,
+            },
+
+            #[cfg(feature = "postgres")]
+            ExecCtx::PgConn(conn) => {
+                crate::executor::transaction_utils::execute_pg_exec(conn, &sql, params).await
+            }
+            #[cfg(feature = "mysql")]
+            ExecCtx::MySqlConn(conn) => {
+                crate::executor::transaction_utils::execute_mysql_exec(conn, &sql, params).await
+            }
+            #[cfg(feature = "sqlite")]
+            ExecCtx::SqliteConn(conn) => {
+                crate::executor::transaction_utils::execute_sqlite_exec(conn, &sql, params).await
+            }
+        }
     }
 
     /// SQLite: UPDATE OR REPLACE ...
@@ -177,7 +239,7 @@ impl UpdateBuilder {
         args: A,
     ) -> Result<Option<(SqlExpr, SmallVec<[Param; 8]>)>, std::borrow::Cow<'static, str>>
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         let items = args.into_vec();
         if items.is_empty() {
@@ -220,11 +282,11 @@ impl UpdateBuilder {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// Начать UPDATE с указанием таблицы (поддерживает выражения: table("users").schema("public"))
-    pub fn update<L>(self, table_arg: L) -> UpdateBuilder
+    pub fn update<L>(self, table_arg: L) -> UpdateBuilder<'a, T>
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let mut b = UpdateBuilder::from_qb(self);
 
@@ -252,5 +314,59 @@ impl QueryBuilder {
         }
 
         b
+    }
+}
+
+impl<'a, T> std::future::IntoFuture for UpdateBuilder<'a, T>
+where
+    T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'a,
+{
+    type Output = ExecResult<Vec<T>>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+
+    fn into_future(mut self) -> Self::IntoFuture {
+        Box::pin(async move {
+            let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+
+            match self.exec_ctx {
+                ExecCtx::None => Err(ExecError::MissingConnection),
+
+                // ---- исполнение через пул ----
+                ExecCtx::Pool(pool) => match pool {
+                    #[cfg(feature = "postgres")]
+                    DbPool::Postgres(p) => fetch_typed_pg::<T>(&p, &sql, params)
+                        .await
+                        .map_err(Into::into),
+                    #[cfg(feature = "mysql")]
+                    DbPool::MySql(p) => {
+                        // В MySQL UPDATE … RETURNING нет — отдаём понятную ошибку
+                        Err(ExecError::Unsupported(
+                            "MySQL does not support UPDATE ... RETURNING; use .exec() then SELECT"
+                                .into(),
+                        ))
+                    }
+                    #[cfg(feature = "sqlite")]
+                    DbPool::Sqlite(p) => fetch_typed_sqlite::<T>(&p, &sql, params)
+                        .await
+                        .map_err(Into::into),
+                },
+
+                // ---- исполнение ВНУТРИ транзакции ----
+                #[cfg(feature = "postgres")]
+                ExecCtx::PgConn(conn) => fetch_typed_pg_exec::<_, T>(conn, &sql, params).await,
+                #[cfg(feature = "mysql")]
+                ExecCtx::MySqlConn(conn) => {
+                    // В MySQL UPDATE … RETURNING нет — отдаём понятную ошибку
+                    Err(ExecError::Unsupported(
+                        "MySQL does not support UPDATE ... RETURNING; use .exec() then SELECT"
+                            .into(),
+                    ))
+                }
+                #[cfg(feature = "sqlite")]
+                ExecCtx::SqliteConn(conn) => {
+                    fetch_typed_sqlite_exec::<_, T>(conn, &sql, params).await
+                }
+            }
+        })
     }
 }

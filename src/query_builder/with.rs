@@ -25,13 +25,13 @@ impl WithItemNode {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// WITH <name> AS (<subquery>)
     /// Второй аргумент — стандартный для библиотеки `ArgList`.
     /// Допустимы: `QueryBuilder` или `|qb| { ... }`. `Expr` здесь не принимается.
     pub fn with<L>(mut self, name: &str, body: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let mut args = body.into_vec();
 
@@ -70,7 +70,7 @@ impl QueryBuilder {
 
     pub fn with_recursive<L>(mut self, name: &str, body: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         self.with_recursive = true;
         self.with(name, body)
@@ -78,7 +78,7 @@ impl QueryBuilder {
 
     pub fn with_materialized<L>(mut self, name: &str, body: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let mut args = body.into_vec();
         if args.is_empty() {
@@ -123,7 +123,7 @@ impl QueryBuilder {
 
     pub fn with_not_materialized<L>(mut self, name: &str, body: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let mut args = body.into_vec();
         if args.is_empty() {
@@ -167,7 +167,7 @@ impl QueryBuilder {
 
     pub fn with_from<L>(mut self, name: &str, from: &str, body: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let mut args = body.into_vec();
         if args.is_empty() {

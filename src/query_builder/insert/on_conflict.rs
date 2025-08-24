@@ -5,12 +5,12 @@ use sqlparser::ast::Ident;
 
 use crate::query_builder::args::ArgList;
 
-impl InsertBuilder {
+impl<'a, T> InsertBuilder<'a, T> {
     /// Указать цель конфликта: on_conflict((col1, col2, ...))
     /// Действие задаётся отдельно через ignore() или merge().
     pub fn on_conflict<L>(mut self, target_cols: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let mut cols = SmallVec::<[Ident; 4]>::new();
         let list = target_cols.into_vec();

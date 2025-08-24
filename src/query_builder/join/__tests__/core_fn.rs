@@ -12,6 +12,8 @@ use sqlparser::ast::{
     TableFactor,
 };
 
+type QB = QueryBuilder<'static, ()>;
+
 fn first_join_from(q: &Query) -> &Join {
     // Достаём &Select без перемещений
     let select = match q.body.as_ref() {
@@ -31,7 +33,7 @@ fn first_join_from(q: &Query) -> &Join {
 
 #[test]
 fn inner_join_with_on_string_builds_ast() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .join("accounts", "users.id = accounts.user_id");
@@ -53,7 +55,7 @@ fn inner_join_with_on_string_builds_ast() {
 
 #[test]
 fn inner_join_with_on_expr_chain_and_on() {
-    let qb = QueryBuilder::new_empty().from("users").select("*").join(
+    let qb = QB::new_empty().from("users").select("*").join(
         table("accounts"),
         col("users.id")
             .eq(col("accounts.user_id"))
@@ -89,7 +91,7 @@ fn inner_join_with_on_expr_chain_and_on() {
 
 #[test]
 fn resolve_join_target_from_expression_table() {
-    let qb = QueryBuilder::new_empty();
+    let qb = QB::new_empty();
     let (tf, _p) = qb
         .resolve_join_target(QBArg::Expr(table("public.accounts")))
         .expect("resolve ok");
@@ -111,8 +113,8 @@ fn resolve_join_target_from_expression_table() {
 #[test]
 fn resolve_join_target_from_subquery_and_closure() {
     // Subquery
-    let sub = QueryBuilder::new_empty().from("accounts").select("*");
-    let qb = QueryBuilder::new_empty();
+    let sub = QB::new_empty().from("accounts").select("*");
+    let qb = QB::new_empty();
     let (tf1, p1) = qb
         .resolve_join_target(QBArg::Subquery(sub))
         .expect("resolve subquery ok");
@@ -120,7 +122,7 @@ fn resolve_join_target_from_subquery_and_closure() {
     assert!(p1.len() >= 0);
 
     // Closure
-    let qb = QueryBuilder::new_empty();
+    let qb = QB::new_empty();
     let (tf2, p2) = qb
         .resolve_join_target(QBArg::Closure(QBClosure::new(|qb| {
             qb.from("accounts").select("*")
@@ -133,7 +135,7 @@ fn resolve_join_target_from_subquery_and_closure() {
 #[test]
 fn left_join_without_on_records_error_and_defaults_to_true() {
     // Делаем LEFT JOIN без ON — должен появиться builder error, а в AST — ON TRUE
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .left_join("accounts", |on| on); // не ставим .on(...)
@@ -150,7 +152,7 @@ fn left_join_without_on_records_error_and_defaults_to_true() {
 
 #[test]
 fn cross_join_has_no_constraint() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .cross_join("accounts");

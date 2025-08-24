@@ -6,14 +6,14 @@ use crate::{
     utils::expr_to_object_name,
 };
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// FROM <table | (subquery)>
     /// Поддерживает:
     /// - &str / String: имя таблицы (если без схемы — подставит default_schema, если есть)
     /// - подзапросы (QueryBuilder / |qb| {...}) → FROM ( ... )
     pub fn from<L>(mut self, table: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let args = table.into_vec();
         self.from_items.reserve(args.len());
@@ -45,7 +45,7 @@ impl QueryBuilder {
     #[inline]
     pub fn from_mut<L>(&mut self, items: L) -> &mut Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let v = std::mem::take(&mut *self);
         *self = v.from(items);

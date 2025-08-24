@@ -21,7 +21,7 @@ impl DistinctOnNode {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// DISTINCT [<expr>, <expr>, ...]
     ///
     /// Поведение «в духе knex»:
@@ -31,7 +31,7 @@ impl QueryBuilder {
     ///   (или в рендере упадёт на `*`, если в SELECT ничего не добавлялось).
     pub fn distinct<A>(mut self, items: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         let list = items.into_vec();
         for it in list {
@@ -64,7 +64,7 @@ impl QueryBuilder {
     /// Проекция (SELECT ...) **не меняется**.
     pub fn distinct_on<A>(mut self, items: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         let list = items.into_vec();
         for it in list {

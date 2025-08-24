@@ -2,6 +2,8 @@ use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
 use sqlparser::ast::{LimitClause, Query, SetExpr};
 
+type QB = QueryBuilder<'static, ()>;
+
 /// Достаём SELECT из Query
 fn select_of(q: &Query) -> &sqlparser::ast::Select {
     match q.body.as_ref() {
@@ -12,7 +14,7 @@ fn select_of(q: &Query) -> &sqlparser::ast::Select {
 
 #[test]
 fn clear_select_and_where_via_router() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select(("email", "name"))
         .r#where(col("id").lt(val(10)))
@@ -31,7 +33,7 @@ fn clear_select_and_where_via_router() {
 
 #[test]
 fn clear_group() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("*",))
         .group_by(("a", "b"))
@@ -49,7 +51,7 @@ fn clear_group() {
 
 #[test]
 fn clear_order() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .order_by(("a", "b"))
@@ -61,7 +63,7 @@ fn clear_order() {
 
 #[test]
 fn clear_having() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -75,7 +77,7 @@ fn clear_having() {
 
 #[test]
 fn clear_join() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select(("*",))
         .join("accounts", "users.id = accounts.user_id")
@@ -93,7 +95,7 @@ fn clear_join() {
 #[test]
 fn clear_limit_and_clear_offset_individually() {
     // лимит очищаем, оффсет оставляем
-    let qb1 = QueryBuilder::new_empty()
+    let qb1 = QB::new_empty()
         .from("t")
         .select(("*",))
         .limit(10)
@@ -115,7 +117,7 @@ fn clear_limit_and_clear_offset_individually() {
     }
 
     // оффсет очищаем, лимит оставляем
-    let qb2 = QueryBuilder::new_empty()
+    let qb2 = QB::new_empty()
         .from("t")
         .select(("*",))
         .limit(10)
@@ -137,7 +139,7 @@ fn clear_limit_and_clear_offset_individually() {
 
 #[test]
 fn clear_limit_offset_both() {
-    let mut qb = QueryBuilder::new_empty()
+    let mut qb = QB::new_empty()
         .from("t")
         .select(("*",))
         .limit(10)
@@ -154,7 +156,7 @@ fn clear_limit_offset_both() {
 
 #[test]
 fn clear_counters_pushes_todo_error() {
-    let err = QueryBuilder::new_empty()
+    let err = QB::new_empty()
         .from("t")
         .select(("*",))
         .clear_counters()
@@ -171,7 +173,7 @@ fn clear_counters_pushes_todo_error() {
 #[test]
 fn clear_router_unknown_and_unsupported() {
     // неизвестный оператор
-    let err1 = QueryBuilder::new_empty()
+    let err1 = QB::new_empty()
         .from("t")
         .select(("*",))
         .clear("foobar")
@@ -184,7 +186,7 @@ fn clear_router_unknown_and_unsupported() {
     );
 
     // пока не поддерживаемые with/union
-    let err2 = QueryBuilder::new_empty()
+    let err2 = QB::new_empty()
         .from("t")
         .select(("*",))
         .clear("with")
@@ -199,7 +201,7 @@ fn clear_router_unknown_and_unsupported() {
 
 #[test]
 fn clear_distinct_resets_flag_and_items() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select(("*",))
         .distinct_on((col("age"),))

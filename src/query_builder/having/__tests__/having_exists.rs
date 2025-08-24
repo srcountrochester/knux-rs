@@ -1,6 +1,11 @@
 use super::super::super::*;
-use crate::expression::helpers::{col, val};
+use crate::{
+    expression::helpers::{col, val},
+    type_helpers::QBClosureHelper,
+};
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr, Query, SetExpr};
+
+type QB = QueryBuilder<'static, ()>;
 
 /// Достаём HAVING из AST
 fn extract_having(q: &Query) -> Option<&SqlExpr> {
@@ -13,14 +18,14 @@ fn extract_having(q: &Query) -> Option<&SqlExpr> {
 #[test]
 fn having_exists_and_not_exists() {
     // подзапрос через замыкание
-    let sub = |qb: QueryBuilder| {
+    let sub: QBClosureHelper<()> = |qb| {
         qb.from("orders")
             .select(("*",))
             .r#where(col("amount").gt(val(100)))
     };
 
     // EXISTS
-    let qb1 = QueryBuilder::new_empty()
+    let qb1 = QB::new_empty()
         .from("users")
         .select(("user_id",))
         .group_by(("user_id",))
@@ -37,7 +42,7 @@ fn having_exists_and_not_exists() {
     );
 
     // NOT EXISTS
-    let qb2 = QueryBuilder::new_empty()
+    let qb2 = QB::new_empty()
         .from("users")
         .select(("user_id",))
         .group_by(("user_id",))
@@ -55,10 +60,10 @@ fn having_exists_and_not_exists() {
 
 #[test]
 fn or_having_exists_builds_or_tree() {
-    let sub1 = |qb: QueryBuilder| qb.from("t1").select(("1",)).r#where(col("x").gt(val(10)));
-    let sub2 = |qb: QueryBuilder| qb.from("t2").select(("1",)).r#where(col("y").lt(val(5)));
+    let sub1: QBClosureHelper<()> = |qb| qb.from("t1").select(("1",)).r#where(col("x").gt(val(10)));
+    let sub2: QBClosureHelper<()> = |qb| qb.from("t2").select(("1",)).r#where(col("y").lt(val(5)));
 
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("agg")
         .select(("k",))
         .group_by(("k",))
@@ -86,7 +91,7 @@ fn or_having_exists_builds_or_tree() {
 #[test]
 fn having_exists_with_expression_is_builder_error() {
     // Передаём выражение вместо подзапроса — должна быть ошибка билдера
-    let err = QueryBuilder::new_empty()
+    let err = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -103,7 +108,7 @@ fn having_exists_with_expression_is_builder_error() {
 
 #[test]
 fn or_having_not_exists_with_expression_is_builder_error() {
-    let err = QueryBuilder::new_empty()
+    let err = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -122,14 +127,14 @@ fn or_having_not_exists_with_expression_is_builder_error() {
 #[test]
 fn having_exists_collects_params_from_subquery() {
     // Два подзапроса с параметрами: 42 и 7 — в таком порядке
-    let sub1 = QueryBuilder::new_empty()
+    let sub1 = QB::new_empty()
         .from("a")
         .select(("*",))
         .r#where(col("n").eq(val(42)));
 
-    let sub2 = |qb: QueryBuilder| qb.from("b").select(("*",)).r#where(col("m").eq(val(7)));
+    let sub2: QBClosureHelper<()> = |qb| qb.from("b").select(("*",)).r#where(col("m").eq(val(7)));
 
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))

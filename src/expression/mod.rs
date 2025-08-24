@@ -34,6 +34,15 @@ impl Expression {
         let alias_opt = self.alias.take().map(Ident::new);
         (alias_opt, self.expr, self.params)
     }
+
+    pub fn empty() -> Self {
+        Self {
+            expr: ast::Expr::Value(ast::Value::Null.into()),
+            alias: None,
+            params: SmallVec::new(),
+            mark_distinct_for_next: false,
+        }
+    }
 }
 
 pub mod aggr;

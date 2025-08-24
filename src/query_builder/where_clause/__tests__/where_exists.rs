@@ -1,21 +1,21 @@
 use super::extract_where;
 use crate::expression::helpers::{col, val};
 use crate::query_builder::QueryBuilder;
+use crate::type_helpers::QBClosureHelper;
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr};
+
+type QB = QueryBuilder<'static, ()>;
 
 #[test]
 fn where_exists_and_not_exists() {
-    let sub = |qb: QueryBuilder| {
+    let sub: QBClosureHelper<()> = |qb| {
         qb.from("orders")
             .select("*")
             .where_(col("amount").gt(val(100)))
     };
 
     // EXISTS
-    let qb1 = QueryBuilder::new_empty()
-        .from("users")
-        .select("*")
-        .where_exists(sub);
+    let qb1 = QB::new_empty().from("users").select("*").where_exists(sub);
     let (q1, _) = qb1.build_query_ast().expect("ok");
     assert!(
         matches!(
@@ -26,7 +26,7 @@ fn where_exists_and_not_exists() {
     );
 
     // NOT EXISTS
-    let qb2 = QueryBuilder::new_empty()
+    let qb2 = QB::new_empty()
         .from("users")
         .select("*")
         .where_not_exists(sub);
@@ -43,11 +43,11 @@ fn where_exists_and_not_exists() {
 #[test]
 fn or_where_exists_appends_with_or() {
     // (a = 1) OR EXISTS (sub)
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("a").eq(val(1)))
-        .or_where_exists(|qb: QueryBuilder| qb.from("orders").select("*"));
+        .or_where_exists::<QBClosureHelper<()>>(|qb| qb.from("orders").select("*"));
 
     let (q, _params) = qb.build_query_ast().expect("ok");
     let w = extract_where(&q).unwrap();
@@ -71,11 +71,11 @@ fn or_where_exists_appends_with_or() {
 #[test]
 fn or_where_not_exists_appends_with_or_and_negated() {
     // (a = 1) OR NOT EXISTS (sub)
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_(col("a").eq(val(1)))
-        .or_where_not_exists(|qb: QueryBuilder| qb.from("orders").select("*"));
+        .or_where_not_exists::<QBClosureHelper<()>>(|qb| qb.from("orders").select("*"));
 
     let (q, _params) = qb.build_query_ast().expect("ok");
     let w = extract_where(&q).unwrap();
@@ -99,7 +99,7 @@ fn or_where_not_exists_appends_with_or_and_negated() {
 #[test]
 fn where_exists_with_non_subquery_adds_builder_error() {
     // Передаём Expression вместо подзапроса → регистрируется ошибка билдера
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
         .where_exists(col("x"));
@@ -115,10 +115,10 @@ fn where_exists_with_non_subquery_adds_builder_error() {
 #[test]
 fn where_exists_collects_params_from_subquery() {
     // В подзапросе есть параметр (amount > 100) — он должен попасть в общий список params
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("users")
         .select("*")
-        .where_exists(|qb: QueryBuilder| {
+        .where_exists::<QBClosureHelper<()>>(|qb| {
             qb.from("orders")
                 .select("*")
                 .where_(col("amount").gt(val(100)))

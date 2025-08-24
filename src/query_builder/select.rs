@@ -22,10 +22,10 @@ impl SelectItemNode {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     pub fn select<L>(mut self, items: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let args = items.into_vec();
         self.select_items.reserve(args.len());
@@ -78,7 +78,7 @@ impl QueryBuilder {
     #[inline]
     pub fn select_mut<L>(&mut self, items: L) -> &mut Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let v = std::mem::take(&mut *self); // или дублируй логику без take
         *self = v.select(items);

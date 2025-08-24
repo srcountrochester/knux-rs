@@ -5,12 +5,12 @@ use sqlparser::ast::{
 };
 
 /// Добавить список RETURNING <expr,...>
-pub(crate) fn push_returning_list<L>(
+pub(crate) fn push_returning_list<'a, L>(
     buf: &mut SmallVec<[SelectItem; 4]>,
     items: L,
 ) -> Result<(), std::borrow::Cow<'static, str>>
 where
-    L: ArgList,
+    L: ArgList<'a>,
 {
     let list = items.into_vec();
     if list.is_empty() {
@@ -33,12 +33,12 @@ where
 }
 
 /// RETURNING один элемент, перезаписать список
-pub(crate) fn set_returning_one<L>(
+pub(crate) fn set_returning_one<'a, L>(
     buf: &mut SmallVec<[SelectItem; 4]>,
     item: L,
 ) -> Result<(), std::borrow::Cow<'static, str>>
 where
-    L: ArgList,
+    L: ArgList<'a>,
 {
     let mut it = item.into_vec().into_iter();
     let Some(first) = it.next() else {

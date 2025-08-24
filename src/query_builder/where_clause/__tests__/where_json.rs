@@ -1,9 +1,10 @@
 use super::extract_where;
 use crate::query_builder::QueryBuilder;
 
+type QB = QueryBuilder<'static, ()>;
 #[test]
 fn where_json_object_basic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("events")
         .select("*")
         .where_json_object("payload", r#"{"a":1}"#);
@@ -15,7 +16,7 @@ fn where_json_object_basic() {
 
 #[test]
 fn where_json_path_basic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("events")
         .select("*")
         .where_json_path("payload", "$.user.id");
@@ -26,7 +27,7 @@ fn where_json_path_basic() {
 
 #[test]
 fn where_json_superset_of_basic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("docs")
         .select("*")
         .where_json_superset_of("payload", r#"{"k":"v"}"#);
@@ -37,7 +38,7 @@ fn where_json_superset_of_basic() {
 
 #[test]
 fn where_json_subset_of_basic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("docs")
         .select("*")
         .where_json_subset_of("payload", r#"{"k":"v"}"#);
@@ -48,7 +49,7 @@ fn where_json_subset_of_basic() {
 
 #[test]
 fn where_json_object_builds_where() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("events")
         .select("*")
         .where_json_object("payload", r#"{"a":1}"#);
@@ -59,7 +60,7 @@ fn where_json_object_builds_where() {
 
 #[test]
 fn where_json_path_builds_where() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("events")
         .select("*")
         .where_json_path("payload", "$.user.id");
@@ -70,14 +71,14 @@ fn where_json_path_builds_where() {
 
 #[test]
 fn where_json_superset_subset_build_where() {
-    let qb1 = QueryBuilder::new_empty()
+    let qb1 = QB::new_empty()
         .from("docs")
         .select("*")
         .where_json_superset_of("payload", r#"{"k":"v"}"#);
     let (q1, _) = qb1.build_query_ast().expect("ok");
     assert!(extract_where(&q1).is_some());
 
-    let qb2 = QueryBuilder::new_empty()
+    let qb2 = QB::new_empty()
         .from("docs")
         .select("*")
         .where_json_subset_of(r#"{"k":"v"}"#, "payload");
@@ -96,7 +97,7 @@ fn mysql_where_json_uses_functions() {
     use sqlparser::ast::Expr as E;
 
     // JSON_CONTAINS
-    let qb1 = QueryBuilder::new_empty()
+    let qb1 = QB::new_empty()
         .from("t")
         .select("*")
         .where_json_object("payload", r#"{"a":1}"#);
@@ -110,7 +111,7 @@ fn mysql_where_json_uses_functions() {
     }
 
     // JSON_CONTAINS_PATH
-    let qb2 = QueryBuilder::new_empty()
+    let qb2 = QB::new_empty()
         .from("t")
         .select("*")
         .where_json_path("payload", "$.a");
@@ -129,7 +130,7 @@ fn mysql_where_json_uses_functions() {
 #[test]
 fn postgres_where_json_path_uses_jsonb_path_exists() {
     use sqlparser::ast::Expr as E;
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select("*")
         .where_json_path("payload", "$.a");
@@ -148,21 +149,21 @@ fn postgres_where_json_path_uses_jsonb_path_exists() {
 #[test]
 fn postgres_where_json_object_and_subset_superset_parse() {
     // Здесь не матчим сам оператор @>/ <@, т.к. представление зависит от версии sqlparser.
-    let qb1 = QueryBuilder::new_empty()
+    let qb1 = QB::new_empty()
         .from("t")
         .select("*")
         .where_json_object("payload", r#"{"a":1}"#);
     let (q1, _) = qb1.build_query_ast().expect("ok");
     assert!(extract_where(&q1).is_some());
 
-    let qb2 = QueryBuilder::new_empty()
+    let qb2 = QB::new_empty()
         .from("t")
         .select("*")
         .where_json_superset_of("payload", r#"{"a":1}"#);
     let (q2, _) = qb2.build_query_ast().expect("ok");
     assert!(extract_where(&q2).is_some());
 
-    let qb3 = QueryBuilder::new_empty()
+    let qb3 = QB::new_empty()
         .from("t")
         .select("*")
         .where_json_subset_of(r#"{"a":1}"#, "payload");
@@ -176,7 +177,7 @@ fn postgres_where_json_object_and_subset_superset_parse() {
 fn sqlite_where_json_path_is_is_not_null_over_json_extract() {
     use sqlparser::ast::Expr as E;
 
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select("*")
         .where_json_path("payload", "$.a");
@@ -202,7 +203,7 @@ fn sqlite_where_json_path_is_is_not_null_over_json_extract() {
 fn sqlite_where_json_superset_subset_are_not_exists() {
     use sqlparser::ast::Expr as E;
 
-    let qb1 = QueryBuilder::new_empty()
+    let qb1 = QB::new_empty()
         .from("t")
         .select("*")
         .where_json_superset_of("payload", r#"{"a":1}"#);
@@ -212,7 +213,7 @@ fn sqlite_where_json_superset_subset_are_not_exists() {
         other => panic!("expected NOT EXISTS, got {:?}", other),
     }
 
-    let qb2 = QueryBuilder::new_empty()
+    let qb2 = QB::new_empty()
         .from("t")
         .select("*")
         .where_json_subset_of(r#"{"a":1}"#, "payload");

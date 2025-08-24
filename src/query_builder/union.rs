@@ -32,11 +32,11 @@ impl SetOpNode {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// UNION (по умолчанию — DISTINCT)
     pub fn union<L>(mut self, rhs: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         self.push_setop_from_args(SetOperator::Union, SetQuantifier::None, rhs, "union()");
         self
@@ -45,7 +45,7 @@ impl QueryBuilder {
     /// UNION ALL
     pub fn union_all<L>(mut self, rhs: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         self.push_setop_from_args(SetOperator::Union, SetQuantifier::All, rhs, "union_all()");
         self
@@ -54,7 +54,7 @@ impl QueryBuilder {
     /// INTERSECT (по умолчанию DISTINCT)
     pub fn intersect<L>(mut self, rhs: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         self.push_setop_from_args(
             SetOperator::Intersect,
@@ -68,7 +68,7 @@ impl QueryBuilder {
     /// INTERSECT ALL
     pub fn intersect_all<L>(mut self, rhs: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         self.push_setop_from_args(
             SetOperator::Intersect,
@@ -82,7 +82,7 @@ impl QueryBuilder {
     /// EXCEPT (по умолчанию DISTINCT)
     pub fn except<L>(mut self, rhs: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         self.push_setop_from_args(SetOperator::Except, SetQuantifier::None, rhs, "except()");
         self
@@ -91,7 +91,7 @@ impl QueryBuilder {
     /// EXCEPT ALL
     pub fn except_all<L>(mut self, rhs: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         self.push_setop_from_args(SetOperator::Except, SetQuantifier::All, rhs, "except_all()");
         self
@@ -105,7 +105,7 @@ impl QueryBuilder {
         rhs: L,
         ctx: &str,
     ) where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let mut args = rhs.into_vec();
 

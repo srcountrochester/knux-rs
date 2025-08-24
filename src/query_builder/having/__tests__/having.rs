@@ -5,6 +5,8 @@ use crate::{
 };
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr, Query, SetExpr};
 
+type QB = QueryBuilder<'static, ()>;
+
 /// Достаём HAVING из AST
 fn extract_having(q: &Query) -> Option<&SqlExpr> {
     match q.body.as_ref() {
@@ -15,7 +17,7 @@ fn extract_having(q: &Query) -> Option<&SqlExpr> {
 
 #[test]
 fn having_single_expr() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("orders")
         .select(("*",))
         .group_by(("user_id",))
@@ -32,7 +34,7 @@ fn having_single_expr() {
 
 #[test]
 fn having_arglist_combines_with_and() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -55,7 +57,7 @@ fn having_arglist_combines_with_and() {
 
 #[test]
 fn and_having_and_or_having() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -86,7 +88,7 @@ fn and_having_and_or_having() {
 fn having_raw_parses_and_or_having_raw() {
     use sqlparser::ast::{BinaryOperator as BO, Expr as E};
 
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select((qi("x"),)) // имя не критично
         .group_by((qi("x"),))
@@ -149,7 +151,7 @@ fn having_raw_parses_and_or_having_raw() {
 #[test]
 fn having_raw_records_parse_error() {
     // некорректный raw должен дать ошибку билдера
-    let err = QueryBuilder::new_empty()
+    let err = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))

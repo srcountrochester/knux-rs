@@ -16,10 +16,10 @@ pub fn clone_params(e: &Expression) -> SmallVec<[crate::param::Param; 4]> {
 }
 
 /// Требует наличие JoinConstraint; если None — регистрирует ошибку и возвращает None.
-pub fn must_have_constraint(
+pub fn must_have_constraint<T>(
     ctx: &str,
     c: Option<JoinConstraint>,
-    qb: &mut QueryBuilder,
+    qb: &mut QueryBuilder<T>,
 ) -> Option<JoinConstraint> {
     if c.is_none() {
         qb.push_builder_error(format!("{ctx}: требуется ON-условие"));

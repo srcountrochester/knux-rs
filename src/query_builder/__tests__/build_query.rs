@@ -1,9 +1,11 @@
 use crate::query_builder::QueryBuilder;
 use sqlparser::ast::{SelectItem, SetExpr};
 
+type QB = QueryBuilder<'static, ()>;
+
 #[test]
 fn build_query_ast_defaults_to_wildcard_projection() {
-    let (query, params) = QueryBuilder::new_empty().build_query_ast().expect("ok");
+    let (query, params) = QB::new_empty().build_query_ast().expect("ok");
 
     assert!(params.is_empty());
 

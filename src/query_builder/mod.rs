@@ -1,6 +1,10 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, marker::PhantomData};
 
-use crate::{executor::DbPool, param::Param, renderer::Dialect};
+use crate::{
+    executor::{DbPool, DbRow},
+    param::Param,
+    renderer::Dialect,
+};
 use smallvec::{SmallVec, smallvec};
 
 mod __tests__;
@@ -48,11 +52,29 @@ const DEFAULT_DIALECT: Dialect = Dialect::MySQL;
 #[cfg(feature = "sqlite")]
 const DEFAULT_DIALECT: Dialect = Dialect::SQLite;
 
+#[allow(dead_code)]
 #[derive(Debug)]
-pub struct QueryBuilder {
-    pub pool: Option<DbPool>,
+pub enum ExecCtx<'e> {
+    None,
+    Pool(DbPool),
+
+    #[cfg(feature = "postgres")]
+    PgConn(&'e mut sqlx::PgConnection),
+
+    #[cfg(feature = "mysql")]
+    MySqlConn(&'e mut sqlx::MySqlConnection),
+
+    #[cfg(feature = "sqlite")]
+    SqliteConn(&'e mut sqlx::SqliteConnection),
+}
+
+pub struct QueryOne<'a, T>(pub(super) QueryBuilder<'a, T>);
+pub struct QueryOptional<'a, T>(pub(super) QueryBuilder<'a, T>);
+
+#[derive(Debug)]
+pub struct QueryBuilder<'a, T = ()> {
     pub(self) select_items: SmallVec<[SelectItemNode; 4]>,
-    pub(self) from_items: SmallVec<[FromItem; 1]>,
+    pub(self) from_items: SmallVec<[FromItem<'a>; 1]>,
     pub(self) where_clause: Option<WhereNode>,
     pub params: SmallVec<[Param; 8]>,
     pub default_schema: Option<String>,
@@ -71,12 +93,14 @@ pub struct QueryBuilder {
     pub(self) with_items: SmallVec<[WithItemNode; 1]>,
     pub(self) with_recursive: bool,
     pub(self) set_ops: SmallVec<[SetOpNode; 1]>,
+    pub(crate) exec_ctx: ExecCtx<'a>,
+    _t: PhantomData<T>,
 }
 
-impl QueryBuilder {
-    pub fn new(pool: DbPool, schema: Option<String>) -> Self {
+impl<'a, T> QueryBuilder<'a, T> {
+    #[inline]
+    pub fn new_pool(pool: DbPool, schema: Option<String>) -> Self {
         Self {
-            pool: Some(pool),
             select_items: smallvec![],
             from_items: smallvec![],
             where_clause: None,
@@ -97,13 +121,42 @@ impl QueryBuilder {
             with_items: smallvec![],
             with_recursive: false,
             set_ops: smallvec![],
+            exec_ctx: ExecCtx::Pool(pool),
+            _t: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn new_tx(schema: Option<String>, exec_ctx: ExecCtx<'a>) -> Self {
+        Self {
+            select_items: smallvec![],
+            from_items: smallvec![],
+            where_clause: None,
+            params: smallvec![],
+            builder_errors: smallvec![],
+            default_schema: schema,
+            pending_schema: None,
+            from_joins: smallvec![],
+            group_by_items: smallvec![],
+            order_by_items: smallvec![],
+            having_clause: None,
+            alias: None,
+            dialect: DEFAULT_DIALECT,
+            limit_num: None,
+            offset_num: None,
+            select_distinct: false,
+            distinct_on_items: smallvec![],
+            with_items: smallvec![],
+            with_recursive: false,
+            set_ops: smallvec![],
+            exec_ctx,
+            _t: PhantomData,
         }
     }
 
     /// Пустой QueryBuilder без пула — удобно для замыканий |qb| qb.select(...)
     pub fn new_empty() -> Self {
         Self {
-            pool: None,
             select_items: smallvec![],
             from_items: smallvec![],
             where_clause: None,
@@ -124,6 +177,8 @@ impl QueryBuilder {
             with_items: smallvec![],
             with_recursive: false,
             set_ops: smallvec![],
+            exec_ctx: ExecCtx::None,
+            _t: PhantomData,
         }
     }
 
@@ -176,6 +231,16 @@ impl QueryBuilder {
     }
 
     #[inline]
+    pub fn one(self) -> QueryOne<'a, T> {
+        QueryOne(self)
+    }
+
+    #[inline]
+    pub fn optional(self) -> QueryOptional<'a, T> {
+        QueryOptional(self)
+    }
+
+    #[inline]
     fn take_builder_error_list(&mut self) -> Option<BuilderErrorList> {
         if self.builder_errors.is_empty() {
             None
@@ -201,8 +266,169 @@ impl QueryBuilder {
     }
 }
 
-impl Default for QueryBuilder {
+impl<'a, T> Default for QueryBuilder<'a, T> {
     fn default() -> Self {
         Self::new_empty()
+    }
+}
+
+use crate::executor::Error as ExecError;
+
+#[cfg(feature = "mysql")]
+use crate::executor::utils::{
+    fetch_one_typed_mysql, fetch_optional_typed_mysql, fetch_typed_mysql,
+};
+#[cfg(feature = "postgres")]
+use crate::executor::utils::{fetch_one_typed_pg, fetch_optional_typed_pg, fetch_typed_pg};
+#[cfg(feature = "sqlite")]
+use crate::executor::utils::{
+    fetch_one_typed_sqlite, fetch_optional_typed_sqlite, fetch_typed_sqlite,
+};
+
+#[cfg(feature = "mysql")]
+use crate::executor::transaction_utils::{
+    fetch_typed_mysql_exec, /* fetch_one_typed_mysql_exec, fetch_optional_typed_mysql_exec */
+};
+#[cfg(feature = "postgres")]
+use crate::executor::transaction_utils::{
+    fetch_typed_pg_exec, /* fetch_one_typed_pg_exec, fetch_optional_typed_pg_exec */
+};
+#[cfg(feature = "sqlite")]
+use crate::executor::transaction_utils::{
+    fetch_typed_sqlite_exec, /* fetch_one_typed_sqlite_exec, fetch_optional_typed_sqlite_exec */
+};
+
+use std::{future::Future, pin::Pin};
+
+// === Vec<T> ===
+impl<'a, T> std::future::IntoFuture for QueryBuilder<'a, T>
+where
+    T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'a,
+{
+    type Output = crate::executor::Result<Vec<T>>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + 'a>>;
+
+    fn into_future(mut self) -> Self::IntoFuture {
+        Box::pin(async move {
+            let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+
+            match self.exec_ctx {
+                ExecCtx::None => Err(ExecError::MissingConnection),
+
+                // ---- исполнение через пул ----
+                ExecCtx::Pool(pool) => match pool {
+                    #[cfg(feature = "postgres")]
+                    DbPool::Postgres(p) => fetch_typed_pg::<T>(&p, &sql, params)
+                        .await
+                        .map_err(Into::into),
+                    #[cfg(feature = "mysql")]
+                    DbPool::MySql(p) => fetch_typed_mysql::<T>(&p, &sql, params)
+                        .await
+                        .map_err(Into::into),
+                    #[cfg(feature = "sqlite")]
+                    DbPool::Sqlite(p) => fetch_typed_sqlite::<T>(&p, &sql, params)
+                        .await
+                        .map_err(Into::into),
+                },
+
+                // ---- исполнение ВНУТРИ транзакции ----
+                #[cfg(feature = "postgres")]
+                ExecCtx::PgConn(conn) => fetch_typed_pg_exec::<_, T>(conn, &sql, params).await,
+                #[cfg(feature = "mysql")]
+                ExecCtx::MySqlConn(conn) => {
+                    fetch_typed_mysql_exec::<_, T>(conn, &sql, params).await
+                }
+                #[cfg(feature = "sqlite")]
+                ExecCtx::SqliteConn(conn) => {
+                    fetch_typed_sqlite_exec::<_, T>(conn, &sql, params).await
+                }
+            }
+        })
+    }
+}
+
+// === one() ===
+impl<'a, T> std::future::IntoFuture for QueryOne<'a, T>
+where
+    T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'a,
+{
+    type Output = crate::executor::Result<T>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + 'a>>;
+
+    fn into_future(mut self) -> Self::IntoFuture {
+        Box::pin(async move {
+            let (sql, params) = self.0.render_sql()?;
+            match self.0.exec_ctx {
+                ExecCtx::None => Err(ExecError::MissingConnection),
+
+                ExecCtx::Pool(pool) => match pool {
+                    #[cfg(feature = "postgres")]
+                    DbPool::Postgres(p) => fetch_one_typed_pg(&p, &sql, params).await,
+                    #[cfg(feature = "mysql")]
+                    DbPool::MySql(p) => fetch_one_typed_mysql(&p, &sql, params).await,
+                    #[cfg(feature = "sqlite")]
+                    DbPool::Sqlite(p) => fetch_one_typed_sqlite(&p, &sql, params).await,
+                },
+
+                #[cfg(feature = "postgres")]
+                ExecCtx::PgConn(conn) => {
+                    let rows = fetch_typed_pg_exec::<_, T>(conn, &sql, params).await?;
+                    rows.into_iter().next().ok_or(ExecError::NotFound)
+                }
+                #[cfg(feature = "mysql")]
+                ExecCtx::MySqlConn(conn) => {
+                    let rows = fetch_typed_mysql_exec::<_, T>(conn, &sql, params).await?;
+                    rows.into_iter().next().ok_or(ExecError::NotFound)
+                }
+                #[cfg(feature = "sqlite")]
+                ExecCtx::SqliteConn(conn) => {
+                    let rows = fetch_typed_sqlite_exec::<_, T>(conn, &sql, params).await?;
+                    rows.into_iter().next().ok_or(ExecError::NotFound)
+                }
+            }
+        })
+    }
+}
+
+// === optional() ===
+impl<'a, T> std::future::IntoFuture for QueryOptional<'a, T>
+where
+    T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'a,
+{
+    type Output = crate::executor::Result<Option<T>>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + 'a>>;
+
+    fn into_future(mut self) -> Self::IntoFuture {
+        Box::pin(async move {
+            let (sql, params) = self.0.render_sql()?;
+            match self.0.exec_ctx {
+                ExecCtx::None => Err(ExecError::MissingConnection),
+
+                ExecCtx::Pool(pool) => match pool {
+                    #[cfg(feature = "postgres")]
+                    DbPool::Postgres(p) => fetch_optional_typed_pg(&p, &sql, params).await,
+                    #[cfg(feature = "mysql")]
+                    DbPool::MySql(p) => fetch_optional_typed_mysql(&p, &sql, params).await,
+                    #[cfg(feature = "sqlite")]
+                    DbPool::Sqlite(p) => fetch_optional_typed_sqlite(&p, &sql, params).await,
+                },
+
+                #[cfg(feature = "postgres")]
+                ExecCtx::PgConn(conn) => {
+                    let rows = fetch_typed_pg_exec::<_, T>(conn, &sql, params).await?;
+                    Ok(rows.into_iter().next())
+                }
+                #[cfg(feature = "mysql")]
+                ExecCtx::MySqlConn(conn) => {
+                    let rows = fetch_typed_mysql_exec::<_, T>(conn, &sql, params).await?;
+                    Ok(rows.into_iter().next())
+                }
+                #[cfg(feature = "sqlite")]
+                ExecCtx::SqliteConn(conn) => {
+                    let rows = fetch_typed_sqlite_exec::<_, T>(conn, &sql, params).await?;
+                    Ok(rows.into_iter().next())
+                }
+            }
+        })
     }
 }

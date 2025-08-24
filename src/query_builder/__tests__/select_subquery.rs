@@ -4,14 +4,18 @@ use sqlparser::ast::SelectItem;
 use crate::expression::helpers::{col, val};
 use crate::param::Param;
 use crate::query_builder::QueryBuilder;
+use crate::type_helpers::QBClosureHelper;
+
+type QB = QueryBuilder<'static, ()>;
 
 #[test]
 fn select_includes_subquery_and_closure_as_expr_subquery() {
     // подзапрос 1: SELECT x
-    let sub1 = QueryBuilder::new_empty().select((col("x"),));
+    let sub1 = QB::new_empty().select((col("x"),));
+    let scalar_subq: QBClosureHelper<()> = |q| q.select((col("y"),));
 
     // подзапрос 2 из замыкания: SELECT y
-    let qb = QueryBuilder::new_empty().select((sub1, |q: QueryBuilder| q.select((col("y"),))));
+    let qb = QB::new_empty().select((sub1, scalar_subq));
 
     assert_eq!(qb.select_items.len(), 2);
 
@@ -34,10 +38,11 @@ fn select_includes_subquery_and_closure_as_expr_subquery() {
 #[test]
 fn subquery_params_are_merged_into_outer_builder_on_build() {
     // subquery: SELECT ? (10)
-    let sub = QueryBuilder::new_empty().select((val(10i32),));
+    let sub = QB::new_empty().select((val(10i32),));
+    let scalar_subq: QBClosureHelper<()> = |q| q.select((val(20i32),));
 
     // closure-subquery: SELECT ? (20)
-    let qb = QueryBuilder::new_empty().select((sub, |q: QueryBuilder| q.select((val(20i32),))));
+    let qb = QB::new_empty().select((sub, scalar_subq));
 
     assert_eq!(qb.select_items.len(), 2);
 
@@ -70,8 +75,8 @@ fn subquery_params_are_merged_into_outer_builder_on_build() {
 
 #[test]
 fn select_mixed_items_expr_and_subquery_preserve_alias_on_expr() {
-    let sub = QueryBuilder::new_empty().select((col("inner"),));
-    let qb = QueryBuilder::new_empty().select((col("name").alias("n"), sub));
+    let sub = QB::new_empty().select((col("inner"),));
+    let qb = QB::new_empty().select((col("name").alias("n"), sub));
 
     assert_eq!(qb.select_items.len(), 2);
 

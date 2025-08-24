@@ -9,17 +9,14 @@ mod where_like;
 mod where_null;
 mod where_raw;
 
-use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr, UnaryOperator};
+use sqlparser::ast::{Expr as SqlExpr, UnaryOperator};
 
 use super::Result;
-use crate::query_builder::{
-    QueryBuilder,
-    args::{ArgList, QBArg},
-};
+use crate::query_builder::{QueryBuilder, args::ArgList};
 
 pub(crate) use core_fn::WhereNode;
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// WHERE <expr> [AND <expr> ...]
     ///
     /// Поддерживает любой `ArgList`:
@@ -28,7 +25,7 @@ impl QueryBuilder {
     /// - подзапросы/замыкания: `.where(|qb| qb.from("t").select("..."))` → `Expr::Subquery`
     pub fn r#where<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         if let Some((group, params)) = self.resolve_where_group(args) {
             // слепит с уже существующим WHERE через AND и добавит параметры группы
@@ -46,7 +43,7 @@ impl QueryBuilder {
     /// - подзапросы/замыкания: `.where(|qb| qb.from("t").select("..."))` → `Expr::Subquery`
     pub fn where_<A>(self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         self.r#where(args)
     }
@@ -54,7 +51,7 @@ impl QueryBuilder {
     /// AND <group>
     pub fn and_where<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         if let Some((group, params)) = self.resolve_where_group(args) {
             self.attach_where_with_and(group, params);
@@ -65,7 +62,7 @@ impl QueryBuilder {
     /// OR <group>
     pub fn or_where<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         if let Some((group, params)) = self.resolve_where_group(args) {
             self.attach_where_with_or(group, params);
@@ -76,7 +73,7 @@ impl QueryBuilder {
     /// WHERE NOT (<group>) — внутри группы условия склеиваются AND.
     pub fn where_not<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         if let Some((group, params)) = self.resolve_where_group(args) {
             let pred = SqlExpr::UnaryOp {
@@ -90,14 +87,14 @@ impl QueryBuilder {
 
     pub fn and_where_not<A>(self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         self.where_not(args)
     }
 
     pub fn or_where_not<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         if let Some((group, params)) = self.resolve_where_group(args) {
             let pred = SqlExpr::UnaryOp {

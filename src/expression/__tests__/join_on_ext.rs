@@ -6,6 +6,8 @@ use sqlparser::ast::{
     BinaryOperator as BO, Expr as SqlExpr, JoinConstraint, JoinOperator, Query, SetExpr,
 };
 
+type QB = QueryBuilder<'static, ()>;
+
 // --- маленький хелпер: достать ON-выражение первого JOIN (возвращаем клонированный Expr) ---
 fn first_join_on_expr(q: &Query) -> SqlExpr {
     let body = &q.body;
@@ -32,7 +34,7 @@ fn first_join_on_expr(q: &Query) -> SqlExpr {
 
 #[test]
 fn on_in_builds_and_inlist_and_collects_params() {
-    let qb = QueryBuilder::new_empty().from("users").select("*").join(
+    let qb = QB::new_empty().from("users").select("*").join(
         "accounts",
         col("users.id")
             .eq(col("accounts.user_id"))
@@ -60,7 +62,7 @@ fn on_in_builds_and_inlist_and_collects_params() {
 
 #[test]
 fn or_on_in_builds_or() {
-    let qb = QueryBuilder::new_empty().from("u").select("*").join(
+    let qb = QB::new_empty().from("u").select("*").join(
         "a",
         col("u.id")
             .eq(col("a.uid"))
@@ -82,7 +84,7 @@ fn or_on_in_builds_or() {
 
 #[test]
 fn on_not_in_builds_negated_inlist() {
-    let qb = QueryBuilder::new_empty().from("u").select("*").join(
+    let qb = QB::new_empty().from("u").select("*").join(
         "a",
         col("u.id")
             .eq(col("a.uid"))
@@ -105,7 +107,7 @@ fn on_not_in_builds_negated_inlist() {
 #[test]
 fn on_null_and_or_on_null() {
     // AND IsNull
-    let qb1 = QueryBuilder::new_empty().from("u").select("*").join(
+    let qb1 = QB::new_empty().from("u").select("*").join(
         "a",
         col("u.id").eq(col("a.uid")).on_null(col("a.deleted_at")),
     );
@@ -120,7 +122,7 @@ fn on_null_and_or_on_null() {
     }
 
     // OR IsNull
-    let qb2 = QueryBuilder::new_empty().from("u").select("*").join(
+    let qb2 = QB::new_empty().from("u").select("*").join(
         "a",
         col("u.id").eq(col("a.uid")).or_on_null(col("a.deleted_at")),
     );
@@ -138,7 +140,7 @@ fn on_null_and_or_on_null() {
 #[test]
 fn on_not_null_and_or_on_not_null() {
     // AND IsNotNull
-    let qb1 = QueryBuilder::new_empty().from("u").select("*").join(
+    let qb1 = QB::new_empty().from("u").select("*").join(
         "a",
         col("u.id")
             .eq(col("a.uid"))
@@ -155,7 +157,7 @@ fn on_not_null_and_or_on_not_null() {
     }
 
     // OR IsNotNull
-    let qb2 = QueryBuilder::new_empty().from("u").select("*").join(
+    let qb2 = QB::new_empty().from("u").select("*").join(
         "a",
         col("u.id")
             .eq(col("a.uid"))
@@ -175,7 +177,7 @@ fn on_not_null_and_or_on_not_null() {
 #[test]
 fn on_between_and_or_on_between() {
     // AND BETWEEN 18..30
-    let qb1 = QueryBuilder::new_empty().from("u").select("*").join(
+    let qb1 = QB::new_empty().from("u").select("*").join(
         "a",
         col("u.id")
             .eq(col("a.uid"))
@@ -198,7 +200,7 @@ fn on_between_and_or_on_between() {
     assert!(matches!(params1[1], Param::I32(30)));
 
     // OR BETWEEN 18..30
-    let qb2 = QueryBuilder::new_empty().from("u").select("*").join(
+    let qb2 = QB::new_empty().from("u").select("*").join(
         "a",
         col("u.id")
             .eq(col("a.uid"))
@@ -218,7 +220,7 @@ fn on_between_and_or_on_between() {
 #[test]
 fn on_not_between_and_or_on_not_between() {
     // AND NOT BETWEEN
-    let qb1 = QueryBuilder::new_empty().from("u").select("*").join(
+    let qb1 = QB::new_empty().from("u").select("*").join(
         "a",
         col("u.id")
             .eq(col("a.uid"))
@@ -238,7 +240,7 @@ fn on_not_between_and_or_on_not_between() {
     }
 
     // OR NOT BETWEEN
-    let qb2 = QueryBuilder::new_empty().from("u").select("*").join(
+    let qb2 = QB::new_empty().from("u").select("*").join(
         "a",
         col("u.id")
             .eq(col("a.uid"))
@@ -262,7 +264,7 @@ fn on_not_between_and_or_on_not_between() {
 fn on_exists_and_on_not_exists_collect_params() {
     // Подзапрос с параметром: SELECT * FROM orders WHERE amount > 100
     let sub = {
-        let inner = QueryBuilder::new_empty()
+        let inner = QB::new_empty()
             .from("orders")
             .select("*")
             .where_(col("amount").gt(val(100)));
@@ -277,7 +279,7 @@ fn on_exists_and_on_not_exists_collect_params() {
     };
 
     // AND EXISTS(sub)
-    let qb1 = QueryBuilder::new_empty()
+    let qb1 = QB::new_empty()
         .from("u")
         .select("*")
         .join("a", col("u.id").eq(col("a.uid")).on_exists(sub.clone()));
@@ -297,7 +299,7 @@ fn on_exists_and_on_not_exists_collect_params() {
     }
 
     // AND NOT EXISTS(sub)
-    let qb2 = QueryBuilder::new_empty()
+    let qb2 = QB::new_empty()
         .from("u")
         .select("*")
         .join("a", col("u.id").eq(col("a.uid")).on_not_exists(sub));

@@ -22,7 +22,7 @@ impl WhereNode {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     #[inline]
     pub(crate) fn attach_where_with_and(
         &mut self,
@@ -67,8 +67,8 @@ impl QueryBuilder {
         negated: bool,
     ) -> Option<(SqlExpr, SmallVec<[Param; 8]>)>
     where
-        C: IntoQBArg,
-        A: ArgList,
+        C: IntoQBArg<'a>,
+        A: ArgList<'a>,
     {
         // левая часть
         let (left, mut lp) = match self.resolve_qbarg_into_expr(column.into_qb_arg()) {
@@ -189,7 +189,7 @@ impl QueryBuilder {
         args: A,
     ) -> Option<(SqlExpr, SmallVec<[Param; 8]>)>
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         let items: Vec<QBArg> = args.into_vec();
         if items.is_empty() {

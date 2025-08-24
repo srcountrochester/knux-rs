@@ -1,7 +1,19 @@
 use super::Expression;
 use crate::param::Param;
 use smallvec::smallvec;
-use sqlparser::ast;
+use sqlparser::{
+    ast::{
+        self, Expr as SqlExpr, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, Statement,
+        WildcardAdditionalOptions, helpers::attached_token::AttachedToken,
+    },
+    dialect::GenericDialect,
+    parser::Parser,
+    tokenizer::{Token, TokenWithSpan},
+};
+
+pub trait RawArg {
+    fn into_expr(self) -> ast::Expr;
+}
 
 /// Колонка: col("users.id")
 pub fn col(name: &str) -> Expression {
@@ -48,12 +60,9 @@ pub fn lit<S: Into<String>>(s: S) -> Expression {
 }
 
 /// Сырой фрагмент AST (на свой риск). Полезно для функций/операторов, которых ещё нет в DSL.
-pub fn raw<F>(build: F) -> Expression
-where
-    F: FnOnce() -> ast::Expr,
-{
+pub fn raw<A: RawArg>(arg: A) -> Expression {
     Expression {
-        expr: build(),
+        expr: arg.into_expr(),
         alias: None,
         params: smallvec![],
         mark_distinct_for_next: false,
@@ -83,5 +92,55 @@ pub fn schema(name: &str) -> Expression {
         alias: None,
         params: smallvec![],
         mark_distinct_for_next: false,
+    }
+}
+
+pub fn expr() -> Expression {
+    Expression::empty()
+}
+
+impl<'a> RawArg for &'a str {
+    fn into_expr(self) -> SqlExpr {
+        let dialect = GenericDialect {};
+        let sql = format!("SELECT {}", self);
+
+        let first_item = Parser::parse_sql(&dialect, &sql)
+            .ok()
+            .and_then(|stmts| stmts.into_iter().next())
+            .and_then(|stmt| match stmt {
+                Statement::Query(q) => match q.body.as_ref() {
+                    SetExpr::Select(sel) => sel.projection.first().cloned(),
+                    _ => None,
+                },
+                _ => None,
+            });
+
+        first_item
+            .and_then(select_item_to_expr)
+            .unwrap_or_else(|| SqlExpr::Value(ast::Value::Null.into()))
+    }
+}
+
+fn select_item_to_expr(item: SelectItem) -> Option<SqlExpr> {
+    use SelectItem::*;
+    Some(match item {
+        UnnamedExpr(e) => e,
+        ExprWithAlias { expr, .. } => expr,
+        Wildcard(opts) => SqlExpr::Wildcard(opts.wildcard_token),
+        QualifiedWildcard(kind, opts) => match kind {
+            SelectItemQualifiedWildcardKind::ObjectName(obj) => {
+                SqlExpr::QualifiedWildcard(obj, opts.wildcard_token)
+            }
+            SelectItemQualifiedWildcardKind::Expr(e) => e,
+        },
+    })
+}
+
+impl<F> RawArg for F
+where
+    F: FnOnce() -> SqlExpr,
+{
+    fn into_expr(self) -> SqlExpr {
+        self()
     }
 }

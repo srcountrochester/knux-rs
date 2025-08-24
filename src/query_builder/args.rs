@@ -37,13 +37,13 @@ impl fmt::Debug for QBClosure {
 /// - подзапрос (`Subquery`) — целый QueryBuilder
 /// - замыкание (`Closure`), в которое мы передаём «пустой» QueryBuilder, а результат — это подзапрос
 #[derive(Debug)]
-pub enum QBArg {
+pub enum QBArg<'a> {
     Expr(Expression),
-    Subquery(QueryBuilder),
+    Subquery(QueryBuilder<'a>),
     Closure(QBClosure),
 }
 
-impl QBArg {
+impl<'a> QBArg<'a> {
     /// Превратить аргумент в `ast::Expr`, если это **готовое выражение**.
     /// Для `Subquery/Closure` вернёт ошибку с пояснением.
     pub fn try_into_expr(self) -> Result<(ast::Expr, SmallVec<[Param; 8]>)> {
@@ -88,145 +88,145 @@ impl QBArg {
 /// - Expression → как есть
 /// - QueryBuilder → подзапрос
 /// - FnOnce(QueryBuilder) -> QueryBuilder → подзапрос, сконструированный на лету
-pub trait IntoQBArg {
-    fn into_qb_arg(self) -> QBArg;
+pub trait IntoQBArg<'a> {
+    fn into_qb_arg(self) -> QBArg<'a>;
 }
 
 // &str → колонка
-impl IntoQBArg for &str {
+impl<'a> IntoQBArg<'a> for &str {
     #[inline]
-    fn into_qb_arg(self) -> QBArg {
+    fn into_qb_arg(self) -> QBArg<'a> {
         QBArg::Expr(expression::helpers::col(self))
     }
 }
 
 // String → колонка
-impl IntoQBArg for String {
+impl<'a> IntoQBArg<'a> for String {
     #[inline]
-    fn into_qb_arg(self) -> QBArg {
+    fn into_qb_arg(self) -> QBArg<'a> {
         QBArg::Expr(expression::helpers::col(&self))
     }
 }
 
 // Expression → как есть
-impl IntoQBArg for Expression {
+impl<'a> IntoQBArg<'a> for Expression {
     #[inline]
-    fn into_qb_arg(self) -> QBArg {
+    fn into_qb_arg(self) -> QBArg<'a> {
         QBArg::Expr(self)
     }
 }
 
 // QueryBuilder → подзапрос
-impl IntoQBArg for QueryBuilder {
+impl<'a> IntoQBArg<'a> for QueryBuilder<'a> {
     #[inline]
-    fn into_qb_arg(self) -> QBArg {
+    fn into_qb_arg(self) -> QBArg<'a> {
         QBArg::Subquery(self)
     }
 }
 
 // Замыкание → подзапрос (построим позже, когда вызывающий метод решит его выполнять)
-impl<F> IntoQBArg for F
+impl<'a, F> IntoQBArg<'a> for F
 where
     F: FnOnce(QueryBuilder) -> QueryBuilder + Send + 'static,
 {
     #[inline]
-    fn into_qb_arg(self) -> QBArg {
+    fn into_qb_arg(self) -> QBArg<'a> {
         QBArg::Closure(QBClosure::new(self))
     }
 }
 
-impl IntoQBArg for QBArg {
+impl<'a> IntoQBArg<'a> for QBArg<'a> {
     #[inline]
-    fn into_qb_arg(self) -> QBArg {
+    fn into_qb_arg(self) -> QBArg<'a> {
         self
     }
 }
 
 // [T; N] по значению
-impl<T, const N: usize> ArgList for [T; N]
+impl<'a, T, const N: usize> ArgList<'a> for [T; N]
 where
-    T: IntoQBArg,
+    T: IntoQBArg<'a>,
 {
     #[inline]
-    fn into_vec(self) -> Vec<QBArg> {
+    fn into_vec(self) -> Vec<QBArg<'a>> {
         // into_iter() по массиву доступен в стабильном Rust
         self.into_iter().map(IntoQBArg::into_qb_arg).collect()
     }
 }
 
 // &[T; N] по ссылке
-impl<'a, T, const N: usize> ArgList for &'a [T; N]
+impl<'a, T, const N: usize> ArgList<'a> for &'a [T; N]
 where
-    T: IntoQBArg + Clone,
+    T: IntoQBArg<'a> + Clone,
 {
     #[inline]
-    fn into_vec(self) -> Vec<QBArg> {
+    fn into_vec(self) -> Vec<QBArg<'a>> {
         self.iter().cloned().map(IntoQBArg::into_qb_arg).collect()
     }
 }
 
 // ОДИНОЧНЫЙ аргумент: позволяет .from("users") / .select("id") и т.п.
-impl<T> ArgList for T
+impl<'a, T> ArgList<'a> for T
 where
-    T: IntoQBArg,
+    T: IntoQBArg<'a>,
 {
     #[inline]
-    fn into_vec(self) -> Vec<QBArg> {
+    fn into_vec(self) -> Vec<QBArg<'a>> {
         vec![IntoQBArg::into_qb_arg(self)]
     }
 }
 
 #[inline]
 /// Удобная утилита: собрать вектор аргументов из любого итератора.
-pub fn collect_args<I, T>(items: I) -> Vec<QBArg>
+pub fn collect_args<'a, I, T>(items: I) -> Vec<QBArg<'a>>
 where
     I: IntoIterator<Item = T>,
-    T: IntoQBArg,
+    T: IntoQBArg<'a>,
 {
     items.into_iter().map(|it| it.into_qb_arg()).collect()
 }
 
-pub trait ArgList {
-    fn into_vec(self) -> Vec<QBArg>;
+pub trait ArgList<'a> {
+    fn into_vec(self) -> Vec<QBArg<'a>>;
 }
 
 // Vec<T>
-impl<T> ArgList for Vec<T>
+impl<'a, T> ArgList<'a> for Vec<T>
 where
-    T: IntoQBArg,
+    T: IntoQBArg<'a>,
 {
     #[inline]
-    fn into_vec(self) -> Vec<QBArg> {
+    fn into_vec(self) -> Vec<QBArg<'a>> {
         self.into_iter().map(IntoQBArg::into_qb_arg).collect()
     }
 }
 
 // &[T]
-impl<'a, T> ArgList for &'a [T]
+impl<'a, T> ArgList<'a> for &'a [T]
 where
-    T: IntoQBArg + Clone,
+    T: IntoQBArg<'a> + Clone,
 {
     #[inline]
-    fn into_vec(self) -> Vec<QBArg> {
+    fn into_vec(self) -> Vec<QBArg<'a>> {
         self.iter().cloned().map(IntoQBArg::into_qb_arg).collect()
     }
 }
 
-impl ArgList for () {
+impl<'a> ArgList<'a> for () {
     #[inline]
-    fn into_vec(self) -> Vec<QBArg> {
+    fn into_vec(self) -> Vec<QBArg<'a>> {
         Vec::new()
     }
 }
 
 macro_rules! impl_arglist_for_tuple {
     ( $($T:ident),+ ) => {
-        impl< $($T),+ > ArgList for ( $($T,)+ )
+        impl<'a,  $($T),+ > ArgList<'a> for ( $($T,)+ )
         where
-            $( $T: IntoQBArg ),+
+            $( $T: IntoQBArg<'a> ),+
         {
             #[allow(non_snake_case)]
-            fn into_vec(self) -> Vec<QBArg> {
+            fn into_vec(self) -> Vec<QBArg<'a>> {
                 let ( $($T,)+ ) = self;
                 let mut v = Vec::new();
                 $( v.push($T.into_qb_arg()); )+

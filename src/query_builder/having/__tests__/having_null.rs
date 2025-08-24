@@ -2,6 +2,8 @@ use super::super::super::*;
 use crate::expression::helpers::col;
 use sqlparser::ast::{BinaryOperator as BO, Expr as SqlExpr, Query, SetExpr};
 
+type QB = QueryBuilder<'static, ()>;
+
 /// Достаём ссылку на HAVING из AST без клонов.
 fn extract_having(q: &Query) -> Option<&SqlExpr> {
     match q.body.as_ref() {
@@ -12,7 +14,7 @@ fn extract_having(q: &Query) -> Option<&SqlExpr> {
 
 #[test]
 fn having_null_basic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -30,7 +32,7 @@ fn having_null_basic() {
 
 #[test]
 fn having_not_null_basic() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -48,7 +50,7 @@ fn having_not_null_basic() {
 
 #[test]
 fn or_having_null_combines_with_or() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -76,7 +78,7 @@ fn or_having_null_combines_with_or() {
 
 #[test]
 fn having_null_then_not_null_combines_with_and() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))
@@ -101,7 +103,7 @@ fn having_null_then_not_null_combines_with_and() {
 
 #[test]
 fn or_having_not_null_combines_with_or() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("x",))
         .group_by(("x",))

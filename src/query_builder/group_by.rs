@@ -18,7 +18,7 @@ impl GroupByNode {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// Добавляет выражения в GROUP BY.
     ///
     /// Поддерживаются:
@@ -27,7 +27,7 @@ impl QueryBuilder {
     /// - ❌ подзапросы и замыкания для GROUP BY не поддерживаются (регистрируется ошибка билдера)
     pub fn group_by<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         let items: Vec<QBArg> = args.into_vec();
         if items.is_empty() {

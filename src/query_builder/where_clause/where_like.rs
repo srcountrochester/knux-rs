@@ -4,11 +4,11 @@ use sqlparser::ast::Expr as SqlExpr;
 use crate::query_builder::QueryBuilder;
 use crate::query_builder::args::IntoQBArg;
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     pub fn where_like<L, R>(mut self, left: L, pattern: R) -> Self
     where
-        L: IntoQBArg,
-        R: IntoQBArg,
+        L: IntoQBArg<'a>,
+        R: IntoQBArg<'a>,
     {
         if let (Ok((l, mut pl)), Ok((r, mut pr))) = (
             self.resolve_qbarg_into_expr(left.into_qb_arg()),
@@ -31,8 +31,8 @@ impl QueryBuilder {
 
     pub fn or_where_like<L, R>(mut self, left: L, pattern: R) -> Self
     where
-        L: IntoQBArg,
-        R: IntoQBArg,
+        L: IntoQBArg<'a>,
+        R: IntoQBArg<'a>,
     {
         if let (Ok((l, mut pl)), Ok((r, mut pr))) = (
             self.resolve_qbarg_into_expr(left.into_qb_arg()),
@@ -55,8 +55,8 @@ impl QueryBuilder {
 
     pub fn where_ilike<L, R>(mut self, left: L, pattern: R) -> Self
     where
-        L: IntoQBArg,
-        R: IntoQBArg,
+        L: IntoQBArg<'a>,
+        R: IntoQBArg<'a>,
     {
         if let (Ok((l, mut pl)), Ok((r, mut pr))) = (
             self.resolve_qbarg_into_expr(left.into_qb_arg()),
@@ -79,8 +79,8 @@ impl QueryBuilder {
 
     pub fn or_where_ilike<L, R>(mut self, left: L, pattern: R) -> Self
     where
-        L: IntoQBArg,
-        R: IntoQBArg,
+        L: IntoQBArg<'a>,
+        R: IntoQBArg<'a>,
     {
         if let (Ok((l, mut pl)), Ok((r, mut pr))) = (
             self.resolve_qbarg_into_expr(left.into_qb_arg()),

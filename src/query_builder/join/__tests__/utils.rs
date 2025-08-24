@@ -4,6 +4,8 @@ use super::super::*;
 use crate::expression::helpers::val;
 use sqlparser::ast::{Expr as SqlExpr, JoinConstraint, Value};
 
+type QB = QueryBuilder<'static, ()>;
+
 #[test]
 fn clone_params_copies_params() {
     // берём любое выражение; val(..) обычно добавляет Param
@@ -22,7 +24,7 @@ fn clone_params_from_expr_copies_params() {
 
 #[test]
 fn must_have_constraint_none_adds_error_and_returns_none() {
-    let mut qb = QueryBuilder::new_empty();
+    let mut qb = QB::new_empty();
 
     let out = must_have_constraint("LEFT JOIN", None, &mut qb);
     assert!(out.is_none(), "expected None constraint when input is None");
@@ -43,7 +45,7 @@ fn must_have_constraint_none_adds_error_and_returns_none() {
 
 #[test]
 fn must_have_constraint_some_passthrough() {
-    let mut qb = QueryBuilder::new_empty();
+    let mut qb = QB::new_empty();
     let jc = JoinConstraint::On(SqlExpr::Value(Value::Boolean(true).into()));
 
     let out = must_have_constraint("INNER JOIN", Some(jc.clone()), &mut qb);

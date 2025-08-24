@@ -1,17 +1,35 @@
+use std::marker::PhantomData;
+use std::pin::Pin;
+
+use crate::executor::{DbPool, DbRow, Error as ExecError, Result as ExecResult};
 use crate::param::Param;
-use crate::query_builder::QueryBuilder;
 use crate::query_builder::args::{ArgList, QBArg};
 use crate::query_builder::ast::FromItem;
+use crate::query_builder::{ExecCtx, QueryBuilder};
 use crate::renderer::Dialect;
 use crate::utils::expr_to_object_name;
 use smallvec::{SmallVec, smallvec};
 use sqlparser::ast::{Expr as SqlExpr, ObjectName, SelectItem};
 
+#[cfg(feature = "mysql")]
+use crate::executor::utils::fetch_typed_mysql;
+#[cfg(feature = "postgres")]
+use crate::executor::utils::fetch_typed_pg;
+#[cfg(feature = "sqlite")]
+use crate::executor::utils::fetch_typed_sqlite;
+
+#[cfg(feature = "mysql")]
+use crate::executor::transaction_utils::fetch_typed_mysql_exec;
+#[cfg(feature = "postgres")]
+use crate::executor::transaction_utils::fetch_typed_pg_exec;
+#[cfg(feature = "sqlite")]
+use crate::executor::transaction_utils::fetch_typed_sqlite_exec;
+
 /// Билдер DELETE FROM ... [USING ...] [WHERE ...] [RETURNING ...]
 #[derive(Debug)]
-pub struct DeleteBuilder {
+pub struct DeleteBuilder<'a, T> {
     pub(crate) table: Option<ObjectName>,
-    pub(crate) using_items: SmallVec<[FromItem; 2]>,
+    pub(crate) using_items: SmallVec<[FromItem<'a>; 2]>,
     pub(crate) where_predicate: Option<SqlExpr>,
     pub(crate) returning: SmallVec<[SelectItem; 4]>,
     pub(crate) params: SmallVec<[Param; 8]>,
@@ -22,11 +40,13 @@ pub struct DeleteBuilder {
     // контекст
     pub(crate) default_schema: Option<String>,
     pub(crate) dialect: Dialect,
+    pub(crate) exec_ctx: ExecCtx<'a>,
+    _t: PhantomData<T>,
 }
 
-impl DeleteBuilder {
+impl<'a, T> DeleteBuilder<'a, T> {
     #[inline]
-    pub(crate) fn from_qb(qb: QueryBuilder) -> Self {
+    pub(crate) fn from_qb(qb: QueryBuilder<'a, T>) -> Self {
         Self {
             table: None,
             using_items: smallvec![],
@@ -36,13 +56,15 @@ impl DeleteBuilder {
             builder_errors: smallvec![],
             default_schema: qb.default_schema,
             dialect: qb.dialect,
+            exec_ctx: qb.exec_ctx,
+            _t: PhantomData,
         }
     }
 
     /// USING <tables...> — дополнительные таблицы (PG/MySQL)
     pub fn using<L>(mut self, items: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let args = items.into_vec();
         self.using_items.reserve(args.len());
@@ -55,7 +77,7 @@ impl DeleteBuilder {
     /// WHERE <expr>[, <expr2>, ...] — элементы связываются AND
     pub fn r#where<A>(mut self, args: A) -> Self
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         match self.resolve_where_group(args) {
             Ok(Some((expr, params))) => self.attach_where_with_and(expr, params),
@@ -65,10 +87,18 @@ impl DeleteBuilder {
         self
     }
 
+    /// WHERE <expr>[, <expr2>, ...] — элементы связываются AND
+    pub fn where_<A>(self, args: A) -> Self
+    where
+        A: ArgList<'a>,
+    {
+        self.r#where(args)
+    }
+
     /// RETURNING <expr, ...> (PG/SQLite; в MySQL будет проигнорировано на рендере)
     pub fn returning<L>(mut self, items: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         if let Err(msg) = super::returning::push_returning_list(&mut self.returning, items) {
             self.push_builder_error(msg);
@@ -79,7 +109,7 @@ impl DeleteBuilder {
     /// RETURNING один элемент, перезаписывает предыдущий список
     pub fn returning_one<L>(mut self, item: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         if let Err(msg) = super::returning::set_returning_one(&mut self.returning, item) {
             self.push_builder_error(msg);
@@ -97,6 +127,44 @@ impl DeleteBuilder {
     pub fn returning_all_from(mut self, qualifier: &str) -> Self {
         super::returning::set_returning_all_from(&mut self.returning, qualifier);
         self
+    }
+
+    /// Выполнить DELETE **без** RETURNING. Возвращает rows_affected.
+    pub async fn exec(mut self) -> ExecResult<u64> {
+        if !self.returning.is_empty() {
+            return Err(ExecError::Unsupported(
+                "DELETE c RETURNING: используйте `.await` (IntoFuture), а не `.exec()`.".into(),
+            ));
+        }
+
+        let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+        let exec_ctx = self.exec_ctx;
+
+        match exec_ctx {
+            ExecCtx::None => Err(ExecError::MissingConnection),
+
+            ExecCtx::Pool(pool) => match pool {
+                #[cfg(feature = "postgres")]
+                DbPool::Postgres(p) => crate::executor::utils::execute_pg(&p, &sql, params).await,
+                #[cfg(feature = "mysql")]
+                DbPool::MySql(p) => crate::executor::utils::execute_mysql(&p, &sql, params).await,
+                #[cfg(feature = "sqlite")]
+                DbPool::Sqlite(p) => crate::executor::utils::execute_sqlite(&p, &sql, params).await,
+            },
+
+            #[cfg(feature = "postgres")]
+            ExecCtx::PgConn(conn) => {
+                crate::executor::transaction_utils::execute_pg_exec(conn, &sql, params).await
+            }
+            #[cfg(feature = "mysql")]
+            ExecCtx::MySqlConn(conn) => {
+                crate::executor::transaction_utils::execute_mysql_exec(conn, &sql, params).await
+            }
+            #[cfg(feature = "sqlite")]
+            ExecCtx::SqliteConn(conn) => {
+                crate::executor::transaction_utils::execute_sqlite_exec(conn, &sql, params).await
+            }
+        }
     }
 
     // ===== helpers =====
@@ -122,7 +190,7 @@ impl DeleteBuilder {
         args: A,
     ) -> Result<Option<(SqlExpr, SmallVec<[Param; 8]>)>, std::borrow::Cow<'static, str>>
     where
-        A: ArgList,
+        A: ArgList<'a>,
     {
         let items = args.into_vec();
         if items.is_empty() {
@@ -182,11 +250,11 @@ impl DeleteBuilder {
     }
 }
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// Начать DELETE с указанием таблицы (поддерживает выражения: table("t").schema("s"))
-    pub fn delete<L>(self, table_arg: L) -> DeleteBuilder
+    pub fn delete<L>(self, table_arg: L) -> DeleteBuilder<'a, T>
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let mut b = DeleteBuilder::from_qb(self);
 
@@ -215,5 +283,64 @@ impl QueryBuilder {
         }
 
         b
+    }
+}
+
+impl<'a, T> std::future::IntoFuture for DeleteBuilder<'a, T>
+where
+    T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'a,
+{
+    type Output = ExecResult<Vec<T>>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+
+    fn into_future(mut self) -> Self::IntoFuture {
+        Box::pin(async move {
+            // Без RETURNING – просим использовать exec()
+            if self.returning.is_empty() {
+                return Err(ExecError::Unsupported(
+                    "DELETE без RETURNING: используйте .exec(). Для получения строк добавьте .returning(...).".into()
+                ));
+            }
+
+            let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+
+            match self.exec_ctx {
+                ExecCtx::None => Err(ExecError::MissingConnection),
+
+                // ---- исполнение через пул ----
+                ExecCtx::Pool(pool) => match pool {
+                    #[cfg(feature = "postgres")]
+                    DbPool::Postgres(p) => fetch_typed_pg::<T>(&p, &sql, params)
+                        .await
+                        .map_err(Into::into),
+                    #[cfg(feature = "mysql")]
+                    DbPool::MySql(p) => {
+                        Err(ExecError::Unsupported(
+                            "MySQL не поддерживает DELETE ... RETURNING; выполните .exec() и при необходимости отдельный SELECT."
+                                .into(),
+                        ))
+                    }
+                    #[cfg(feature = "sqlite")]
+                    DbPool::Sqlite(p) => fetch_typed_sqlite::<T>(&p, &sql, params)
+                        .await
+                        .map_err(Into::into),
+                },
+
+                // ---- исполнение ВНУТРИ транзакции ----
+                #[cfg(feature = "postgres")]
+                ExecCtx::PgConn(conn) => fetch_typed_pg_exec::<_, T>(conn, &sql, params).await,
+                #[cfg(feature = "mysql")]
+                ExecCtx::MySqlConn(conn) => {
+                    Err(ExecError::Unsupported(
+                        "MySQL не поддерживает DELETE ... RETURNING; выполните .exec() и при необходимости отдельный SELECT."
+                            .into(),
+                    ))
+                }
+                #[cfg(feature = "sqlite")]
+                ExecCtx::SqliteConn(conn) => {
+                    fetch_typed_sqlite_exec::<_, T>(conn, &sql, params).await
+                }
+            }
+        })
     }
 }

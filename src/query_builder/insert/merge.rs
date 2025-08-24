@@ -14,13 +14,13 @@ enum ArgKind {
     },
 }
 
-impl InsertBuilder {
+impl<'a, T> InsertBuilder<'a, T> {
     /// merge((col1, val1, col2, val2, ...)) — набор присваиваний для upsert.
     /// Для PG/SQLite попадёт в `ON CONFLICT ... DO UPDATE SET ...`,
     /// для MySQL — в `ON DUPLICATE KEY UPDATE ...`.
     pub fn merge<L>(mut self, assignments: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let Some(set) = self.parse_assignments(assignments.into_vec()) else {
             return self; // ошибки уже записаны

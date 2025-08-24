@@ -1,6 +1,9 @@
 use crate::expression::helpers::{col, table, val};
 use crate::query_builder::QueryBuilder;
 use crate::tests::dialect_test_helpers::{col_list, qi, qn};
+use crate::type_helpers::QBClosureHelper;
+
+type QB = QueryBuilder<'static, ()>;
 
 /// Грубая нормализация пробелов: схлопываем последовательности в один пробел,
 /// убираем ведущие/замыкающие пробелы. Помогает сделать проверки более стабильными.
@@ -23,7 +26,7 @@ fn norm(s: &str) -> String {
 
 #[test]
 fn simple_select_from_table() {
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .select(&["id", "name"])
         .from("users")
         .to_sql()
@@ -42,7 +45,7 @@ fn simple_select_from_table() {
 
 #[test]
 fn select_from_table_with_default_schema() {
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .with_default_schema(Some("public".into()))
         .select(("id", "name"))
         .from("users");
@@ -61,7 +64,7 @@ fn select_from_table_with_default_schema() {
 
 #[test]
 fn select_from_qualified_table() {
-    let (sql, _) = QueryBuilder::new_empty()
+    let (sql, _) = QB::new_empty()
         .select(("id",))
         .from("app.users")
         .to_sql()
@@ -75,11 +78,11 @@ fn select_from_qualified_table() {
 #[test]
 fn select_from_subquery_and_collect_params() {
     // subquery: SELECT ?
-    let sub = QueryBuilder::new_empty().select((val(10i32),));
+    let sub = QB::new_empty().select((val(10i32),));
     // closure-subquery: SELECT ?
-    let qb = QueryBuilder::new_empty()
-        .select(("x",))
-        .from((sub, |q: QueryBuilder| q.select((val(20i32),))));
+    let scalar_subq: QBClosureHelper<()> = |q| q.select((val(20i32),));
+
+    let qb = QB::new_empty().select(("x",)).from((sub, scalar_subq));
 
     let (sql, params) = qb.to_sql().unwrap();
     assert!(sql.contains("FROM (SELECT"));
@@ -88,7 +91,7 @@ fn select_from_subquery_and_collect_params() {
 
 #[test]
 fn to_sql_from_multiple_plain_tables_with_default_schema() {
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .with_default_schema(Some("app".into()))
         .select(("id",))
         .from(("users", "auth.roles", "logs"))
@@ -132,11 +135,12 @@ fn to_sql_from_multiple_plain_tables_with_default_schema() {
 #[test]
 fn to_sql_from_mixed_table_subquery_and_closure() {
     // subquery: SELECT ?
-    let sub = QueryBuilder::new_empty().select((val(10i32),));
+    let sub = QB::new_empty().select((val(10i32),));
+    let scalar_subq: QBClosureHelper<()> = |q| q.select((val(20i32),));
     // closure-subquery: SELECT ?
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .select(("x",))
-        .from(("users", sub, |q: QueryBuilder| q.select((val(20i32),))))
+        .from(("users", sub, scalar_subq))
         .to_sql()
         .expect("to_sql");
 
@@ -189,7 +193,7 @@ fn to_sql_from_mixed_table_subquery_and_closure() {
 #[test]
 fn insert_into_with_columns_values_and_params() {
     // INSERT INTO users (id, age) VALUES (?, ?)
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .into("users")
         .columns(("id", "age"))
         .insert((val(1i32), val(2i32)))
@@ -212,7 +216,7 @@ fn insert_into_with_columns_values_and_params() {
 #[test]
 fn insert_into_with_default_schema() {
     // default_schema префиксует простое имя
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .with_default_schema(Some("public".into()))
         .into("users")
         .columns(("id",))
@@ -229,7 +233,7 @@ fn insert_into_with_default_schema() {
 #[cfg(not(feature = "mysql"))]
 #[test]
 fn insert_returning_is_emitted() {
-    let (sql, _params) = QueryBuilder::new_empty()
+    let (sql, _params) = QB::new_empty()
         .into("t")
         .columns(("x",))
         .insert((val(1i32),))
@@ -243,7 +247,7 @@ fn insert_returning_is_emitted() {
 #[test]
 fn update_set_and_where_to_sql() {
     // UPDATE users SET age = ? WHERE id = ?
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .update("users")
         .set(("age", val(30i32)))
         .r#where((col("id").eq(val(1i32)),))
@@ -266,7 +270,7 @@ fn update_set_and_where_to_sql() {
 #[test]
 fn update_with_from_sources() {
     // UPDATE t SET x = ? FROM a, b
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .update("t")
         .set(("x", val(1i32)))
         .from(("a", "b"))
@@ -297,7 +301,7 @@ fn update_with_from_sources() {
 #[test]
 fn delete_basic_where_and_returning() {
     // DELETE FROM t WHERE id = ? RETURNING *
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .delete(table("t"))
         .r#where((col("id").eq(val(10i32)),))
         .returning_all()
@@ -329,7 +333,7 @@ fn delete_basic_where_and_returning() {
 #[test]
 fn delete_using_multiple_tables() {
     // DELETE FROM t USING a, b
-    let (sql, params) = QueryBuilder::new_empty()
+    let (sql, params) = QB::new_empty()
         .delete("t")
         .using(("a", "b"))
         .to_sql()

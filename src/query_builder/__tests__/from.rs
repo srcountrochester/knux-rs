@@ -3,11 +3,14 @@ use sqlparser::ast::{ObjectNamePart, SetExpr, TableFactor};
 use crate::expression::helpers::val;
 use crate::param::Param;
 use crate::query_builder::QueryBuilder;
+use crate::type_helpers::QBClosureHelper;
+
+type QB = QueryBuilder<'static, ()>;
 
 #[test]
 fn from_multiple_plain_tables_with_default_schema() {
     // schema подставляется только для одиночных идентификаторов
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .with_default_schema(Some("app".into()))
         .select(("id",))
         .from(("users", "auth.roles", "logs"));
@@ -57,11 +60,12 @@ fn from_multiple_plain_tables_with_default_schema() {
 #[test]
 fn from_mixed_table_subquery_and_closure_collects_params_and_preserves_order() {
     // subquery 1: SELECT ?
-    let sub = QueryBuilder::new_empty().select((val(10i32),));
+    let sub = QB::new_empty().select((val(10i32),));
+    let scalar_subq: QBClosureHelper<()> = |q| q.select((val(20i32),));
     // closure-subquery: SELECT ?
-    let qb = QueryBuilder::new_empty()
+    let qb = QB::new_empty()
         .select(("x",))
-        .from(("users", sub, |q: QueryBuilder| q.select((val(20i32),))));
+        .from(("users", sub, scalar_subq));
 
     let (query, params) = qb.build_query_ast().expect("ast");
     assert_eq!(params.len(), 2, "params from both subqueries are collected");

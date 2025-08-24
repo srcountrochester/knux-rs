@@ -3,11 +3,11 @@ use sqlparser::ast::{SelectItem, SelectItemQualifiedWildcardKind, WildcardAdditi
 use super::core_fn::InsertBuilder;
 use crate::{query_builder::args::ArgList, utils::parse_object_name};
 
-impl InsertBuilder {
+impl<'a, T> InsertBuilder<'a, T> {
     /// RETURNING <expr, ...>
     pub fn returning<L>(mut self, items: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let list = items.into_vec();
         if list.is_empty() {
@@ -26,7 +26,7 @@ impl InsertBuilder {
     /// RETURNING ровно одного выражения. Перезаписывает ранее заданный returning.
     pub fn returning_one<L>(mut self, item: L) -> Self
     where
-        L: ArgList,
+        L: ArgList<'a>,
     {
         let mut args = item.into_vec();
         if args.is_empty() {

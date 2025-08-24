@@ -3,7 +3,7 @@ use smallvec::smallvec;
 use super::utils::parse_where_expr;
 use crate::query_builder::QueryBuilder;
 
-impl QueryBuilder {
+impl<'a, T> QueryBuilder<'a, T> {
     /// WHERE <raw SQL>, парсится через sqlparser (GenericDialect).
     pub fn where_raw(mut self, raw: &str) -> Self {
         match parse_where_expr(raw) {

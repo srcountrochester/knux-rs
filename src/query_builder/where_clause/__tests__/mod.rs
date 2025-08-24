@@ -28,8 +28,10 @@ mod where_null;
 #[cfg(test)]
 mod where_raw;
 
+#[cfg(test)]
 use sqlparser::ast::{Expr as SqlExpr, Query, SetExpr};
 
+#[cfg(test)]
 fn extract_where(q: &Query) -> Option<&SqlExpr> {
     let select = match q.body.as_ref() {
         SetExpr::Select(select_box) => select_box.as_ref(),
