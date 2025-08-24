@@ -46,7 +46,7 @@ impl<'a, T> QueryBuilder<'a, T> {
                     }
                 }
                 QBArg::Closure(c) => {
-                    let built = c.apply(QueryBuilder::new_empty());
+                    let built = c.call(QueryBuilder::new_empty());
                     if let Ok((q, p)) = built.build_query_ast() {
                         self.push_select_subquery(q, p);
                     }
@@ -85,7 +85,7 @@ impl<'a, T> QueryBuilder<'a, T> {
                     }
                 }
                 QBArg::Closure(c) => {
-                    let built = c.apply(QueryBuilder::new_empty());
+                    let built = c.call(QueryBuilder::new_empty());
                     if let Ok((q, p)) = built.build_query_ast() {
                         let expr = SqlExpr::Subquery(Box::new(q));
                         let mut sv = SmallVec::new();

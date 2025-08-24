@@ -1,3 +1,5 @@
+#![allow(unused_comparisons)]
+
 use super::super::*;
 use crate::{
     expression::{

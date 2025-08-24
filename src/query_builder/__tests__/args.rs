@@ -5,8 +5,6 @@ use crate::query_builder::{Error, QueryBuilder, Result};
 use crate::type_helpers::QBClosureHelper;
 use sqlparser::ast;
 
-type QB = QueryBuilder<'static, ()>;
-
 #[test]
 fn into_qb_arg_from_str_and_string() {
     let arg1: QBArg = "users.id".into_qb_arg();

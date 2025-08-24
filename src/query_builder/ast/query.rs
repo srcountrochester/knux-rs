@@ -467,7 +467,7 @@ impl<'a, T> QueryBuilder<'a, T> {
                     });
                 }
                 FromItem::SubqueryClosure(closure) => {
-                    let built = closure.apply(QueryBuilder::new_empty());
+                    let built = closure.call(QueryBuilder::new_empty());
                     let alias = built.alias.clone();
                     let (q, p) = built.build_query_ast()?;
                     if !p.is_empty() {

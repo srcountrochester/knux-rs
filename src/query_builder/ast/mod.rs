@@ -11,11 +11,11 @@ use sqlparser::ast::{self as S, ObjectName};
 
 use super::QueryBuilder;
 
-#[derive(Debug)]
-pub enum FromItem<'a> {
+#[derive(Debug, Clone)]
+pub enum FromItem<'a, T = ()> {
     TableName(ObjectName),
     Subquery(Box<QueryBuilder<'a>>),
-    SubqueryClosure(QBClosure),
+    SubqueryClosure(QBClosure<T>),
 }
 
 #[inline]

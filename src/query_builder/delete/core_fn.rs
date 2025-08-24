@@ -26,7 +26,7 @@ use crate::executor::transaction_utils::fetch_typed_pg_exec;
 use crate::executor::transaction_utils::fetch_typed_sqlite_exec;
 
 /// Билдер DELETE FROM ... [USING ...] [WHERE ...] [RETURNING ...]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeleteBuilder<'a, T> {
     pub(crate) table: Option<ObjectName>,
     pub(crate) using_items: SmallVec<[FromItem<'a>; 2]>,
@@ -138,33 +138,45 @@ impl<'a, T> DeleteBuilder<'a, T> {
         }
 
         let (sql, params) = self.render_sql().map_err(ExecError::from)?;
-        let exec_ctx = self.exec_ctx;
+        self.exec_ctx.execute(&sql, params).await
+    }
 
-        match exec_ctx {
-            ExecCtx::None => Err(ExecError::MissingConnection),
-
-            ExecCtx::Pool(pool) => match pool {
-                #[cfg(feature = "postgres")]
-                DbPool::Postgres(p) => crate::executor::utils::execute_pg(&p, &sql, params).await,
-                #[cfg(feature = "mysql")]
-                DbPool::MySql(p) => crate::executor::utils::execute_mysql(&p, &sql, params).await,
-                #[cfg(feature = "sqlite")]
-                DbPool::Sqlite(p) => crate::executor::utils::execute_sqlite(&p, &sql, params).await,
-            },
-
-            #[cfg(feature = "postgres")]
-            ExecCtx::PgConn(conn) => {
-                crate::executor::transaction_utils::execute_pg_exec(conn, &sql, params).await
-            }
-            #[cfg(feature = "mysql")]
-            ExecCtx::MySqlConn(conn) => {
-                crate::executor::transaction_utils::execute_mysql_exec(conn, &sql, params).await
-            }
-            #[cfg(feature = "sqlite")]
-            ExecCtx::SqliteConn(conn) => {
-                crate::executor::transaction_utils::execute_sqlite_exec(conn, &sql, params).await
-            }
+    pub fn exec_send(
+        mut self,
+    ) -> ExecResult<impl core::future::Future<Output = ExecResult<u64>> + Send + 'static> {
+        if !self.returning.is_empty() {
+            return Err(ExecError::Unsupported(
+                "DELETE c RETURNING: используйте `.await` (IntoFuture), а не `.exec()`.".into(),
+            ));
         }
+
+        if self.dialect == Dialect::MySQL {
+            return Err(ExecError::Unsupported(
+                "MySQL не поддерживает DELETE ... RETURNING; выполните .exec() и, при необходимости, отдельный SELECT."
+                    .into(),
+            ));
+        }
+
+        let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+        let ctx = self.exec_ctx.clone();
+        ctx.execute_send(sql, params)
+    }
+
+    pub fn into_send<R>(
+        mut self,
+    ) -> ExecResult<impl core::future::Future<Output = ExecResult<Vec<R>>> + Send + 'static>
+    where
+        R: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'static,
+    {
+        if self.returning.is_empty() {
+            return Err(ExecError::Unsupported(
+                "DELETE without RETURNING: use `.exec()` instead.".into(),
+            ));
+        }
+
+        let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+        let ctx = self.exec_ctx.clone();
+        ctx.select_send::<R>(sql, params)
     }
 
     // ===== helpers =====

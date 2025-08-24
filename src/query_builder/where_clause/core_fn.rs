@@ -111,7 +111,7 @@ impl<'a, T> QueryBuilder<'a, T> {
                     }
                 },
                 QBArg::Closure(c) => {
-                    let built = c.apply(QueryBuilder::new_empty());
+                    let built = c.call(QueryBuilder::new_empty());
                     match built.build_query_ast() {
                         Ok((q, p)) => {
                             out_params.extend(p);
@@ -175,7 +175,7 @@ impl<'a, T> QueryBuilder<'a, T> {
                 Ok((SqlExpr::Subquery(Box::new(q)), params.into()))
             }
             QBArg::Closure(c) => {
-                let built = c.apply(QueryBuilder::new_empty());
+                let built = c.call(QueryBuilder::new_empty());
                 let (q, params) = built.build_query_ast()?;
                 Ok((SqlExpr::Subquery(Box::new(q)), params.into()))
             }

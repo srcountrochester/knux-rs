@@ -61,7 +61,7 @@ impl<'a, T> QueryBuilder<'a, T> {
 
                 // ===== Closure → Subquery =====
                 QBArg::Closure(c) => {
-                    let built = c.apply(QueryBuilder::new_empty());
+                    let built = c.call(QueryBuilder::new_empty());
                     match built.build_query_ast() {
                         Ok((q, p)) => {
                             let item = SelectItem::UnnamedExpr(SqlExpr::Subquery(Box::new(q)));

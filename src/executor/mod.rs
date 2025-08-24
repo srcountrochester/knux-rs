@@ -85,7 +85,7 @@ impl QueryExecutor {
         let life = cfg.max_lifetime;
         let test_before = cfg.test_before_acquire.unwrap_or(false);
         let init_sql_all = cfg.after_connect_sql.clone(); // init SQL для всех СУБД
-        // Не удалять! нужно для ветки postgres
+        #[cfg(feature = "postgres")]
         let schema = cfg.schema.clone();
 
         // выбираем драйвер по схеме URL
@@ -235,6 +235,7 @@ impl QueryExecutor {
 
     #[cfg(feature = "sqlite")]
     pub fn as_sqlite_pool(&self) -> Option<&SqlitePool> {
+        #[allow(irrefutable_let_patterns)]
         if let DbPool::Sqlite(pool) = &self.pool {
             Some(pool)
         } else {

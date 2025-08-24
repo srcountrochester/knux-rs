@@ -19,7 +19,7 @@ impl<'a, K> QueryBuilder<'a, K> {
                 }
             }
             QBArg::Closure(c) => {
-                let built = c.apply(QueryBuilder::new_empty());
+                let built = c.call(QueryBuilder::new_empty());
                 if let Ok((q, p)) = built.build_query_ast() {
                     let pred = SqlExpr::Exists {
                         subquery: Box::new(q),
@@ -52,7 +52,7 @@ impl<'a, K> QueryBuilder<'a, K> {
                 }
             }
             QBArg::Closure(c) => {
-                let built = c.apply(QueryBuilder::new_empty());
+                let built = c.call(QueryBuilder::new_empty());
                 if let Ok((q, p)) = built.build_query_ast() {
                     let pred = SqlExpr::Exists {
                         subquery: Box::new(q),
@@ -85,7 +85,7 @@ impl<'a, K> QueryBuilder<'a, K> {
                 }
             }
             QBArg::Closure(c) => {
-                let built = c.apply(QueryBuilder::new_empty());
+                let built = c.call(QueryBuilder::new_empty());
                 if let Ok((q, p)) = built.build_query_ast() {
                     let pred = SqlExpr::Exists {
                         subquery: Box::new(q),
@@ -118,7 +118,7 @@ impl<'a, K> QueryBuilder<'a, K> {
                 }
             }
             QBArg::Closure(c) => {
-                let built = c.apply(QueryBuilder::new_empty());
+                let built = c.call(QueryBuilder::new_empty());
                 if let Ok((q, p)) = built.build_query_ast() {
                     let pred = SqlExpr::Exists {
                         subquery: Box::new(q),

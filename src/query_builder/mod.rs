@@ -15,6 +15,7 @@ mod clear;
 mod delete;
 mod distinct;
 mod error;
+mod exec_ctx;
 mod from;
 mod group_by;
 mod having;
@@ -33,6 +34,7 @@ mod with;
 use ast::FromItem;
 use distinct::DistinctOnNode;
 pub use error::{BuilderErrorList, Error, Result};
+pub use exec_ctx::ExecCtx;
 use group_by::GroupByNode;
 use having::HavingNode;
 pub use insert::InsertBuilder;
@@ -52,26 +54,10 @@ const DEFAULT_DIALECT: Dialect = Dialect::MySQL;
 #[cfg(feature = "sqlite")]
 const DEFAULT_DIALECT: Dialect = Dialect::SQLite;
 
-#[allow(dead_code)]
-#[derive(Debug)]
-pub enum ExecCtx<'e> {
-    None,
-    Pool(DbPool),
-
-    #[cfg(feature = "postgres")]
-    PgConn(&'e mut sqlx::PgConnection),
-
-    #[cfg(feature = "mysql")]
-    MySqlConn(&'e mut sqlx::MySqlConnection),
-
-    #[cfg(feature = "sqlite")]
-    SqliteConn(&'e mut sqlx::SqliteConnection),
-}
-
 pub struct QueryOne<'a, T>(pub(super) QueryBuilder<'a, T>);
 pub struct QueryOptional<'a, T>(pub(super) QueryBuilder<'a, T>);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QueryBuilder<'a, T = ()> {
     pub(self) select_items: SmallVec<[SelectItemNode; 4]>,
     pub(self) from_items: SmallVec<[FromItem<'a>; 1]>,
@@ -253,14 +239,6 @@ impl<'a, T> QueryBuilder<'a, T> {
     }
 
     #[inline]
-    fn extend_params<I>(&mut self, it: I)
-    where
-        I: IntoIterator<Item = crate::param::Param>,
-    {
-        self.params.extend(it);
-    }
-
-    #[inline]
     fn is_mysql(&self) -> bool {
         self.dialect == crate::renderer::Dialect::MySQL
     }
@@ -272,7 +250,7 @@ impl<'a, T> Default for QueryBuilder<'a, T> {
     }
 }
 
-use crate::executor::Error as ExecError;
+use crate::executor::{Error as ExecError, Result as ExecResult};
 
 #[cfg(feature = "mysql")]
 use crate::executor::utils::{
@@ -430,5 +408,45 @@ where
                 }
             }
         })
+    }
+}
+
+impl<'a, T> QueryBuilder<'a, T>
+where
+    T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'static,
+{
+    /// Future, пригодный для tokio::spawn (Send + 'static). Только для ExecCtx::Pool.
+    pub fn into_send(
+        mut self,
+    ) -> ExecResult<impl core::future::Future<Output = ExecResult<Vec<T>>> + Send + 'static>
+    where
+        T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'static,
+    {
+        let (sql, params) = self.render_sql()?;
+        // перемещаем контекст (если нельзя — возьмите clone()):
+        let ctx = self.exec_ctx.clone(); // ExecCtx: Clone у вас уже есть
+        ctx.select_send::<T>(sql, params)
+    }
+
+    pub fn one_send(
+        mut self,
+    ) -> ExecResult<impl core::future::Future<Output = ExecResult<T>> + Send + 'static>
+    where
+        T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'static,
+    {
+        let (sql, params) = self.render_sql()?;
+        let ctx = self.exec_ctx.clone();
+        ctx.select_one_send::<T>(sql, params)
+    }
+
+    pub fn optional_send(
+        mut self,
+    ) -> ExecResult<impl core::future::Future<Output = ExecResult<Option<T>>> + Send + 'static>
+    where
+        T: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'static,
+    {
+        let (sql, params) = self.render_sql()?;
+        let ctx = self.exec_ctx.clone();
+        ctx.select_optional_send::<T>(sql, params)
     }
 }

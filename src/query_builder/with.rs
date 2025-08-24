@@ -52,7 +52,7 @@ impl<'a, T> QueryBuilder<'a, T> {
                 Err(e) => self.push_builder_error(format!("with(): {e}")),
             },
             QBArg::Closure(c) => {
-                let built = c.apply(QueryBuilder::new_empty());
+                let built = c.call(QueryBuilder::new_empty());
                 match built.build_query_ast() {
                     Ok((q, params)) => self.push_cte_with(&name, q, params, None, None),
                     Err(e) => self.push_builder_error(format!("with(): {e}")),
@@ -100,7 +100,7 @@ impl<'a, T> QueryBuilder<'a, T> {
                 Err(e) => self.push_builder_error(format!("with_materialized(): {e}")),
             },
             QBArg::Closure(c) => {
-                let built = c.apply(QueryBuilder::new_empty());
+                let built = c.call(QueryBuilder::new_empty());
                 match built.build_query_ast() {
                     Ok((q, params)) => {
                         self.push_cte_with(
@@ -144,7 +144,7 @@ impl<'a, T> QueryBuilder<'a, T> {
                 Err(e) => self.push_builder_error(format!("with_not_materialized(): {e}")),
             },
             QBArg::Closure(c) => {
-                let built = c.apply(QueryBuilder::new_empty());
+                let built = c.call(QueryBuilder::new_empty());
                 match built.build_query_ast() {
                     Ok((q, params)) => {
                         self.push_cte_with(
@@ -177,7 +177,7 @@ impl<'a, T> QueryBuilder<'a, T> {
 
         let built = match args.remove(0) {
             QBArg::Subquery(qb) => qb.build_query_ast(),
-            QBArg::Closure(c) => c.apply(QueryBuilder::new_empty()).build_query_ast(),
+            QBArg::Closure(c) => c.call(QueryBuilder::new_empty()).build_query_ast(),
             _ => {
                 self.push_builder_error(
                     "with_from(): expression is not allowed; pass a subquery or closure",

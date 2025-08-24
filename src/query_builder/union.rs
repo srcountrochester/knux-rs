@@ -122,7 +122,7 @@ impl<'a, T> QueryBuilder<'a, T> {
 
         let built = match args.remove(0) {
             QBArg::Subquery(qb) => qb.build_query_ast(),
-            QBArg::Closure(c) => c.apply(QueryBuilder::new_empty()).build_query_ast(),
+            QBArg::Closure(c) => c.call(QueryBuilder::new_empty()).build_query_ast(),
             _ => {
                 self.push_builder_error(format!(
                     "{ctx}: expression is not allowed; pass a subquery or closure"

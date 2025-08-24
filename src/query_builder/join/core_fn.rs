@@ -239,7 +239,7 @@ impl<'a, K> QueryBuilder<'a, K> {
 
             QBArg::Closure(c) => {
                 // Выполняем замыкание на пустом билдере, берём его alias
-                let built = c.apply(QueryBuilder::new_empty());
+                let built = c.call(QueryBuilder::new_empty());
                 let alias = built.alias.clone();
                 let (q, params) = built.build_query_ast()?;
                 Ok((

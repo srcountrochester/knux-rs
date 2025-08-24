@@ -31,7 +31,7 @@ use crate::executor::transaction_utils::fetch_typed_sqlite_exec;
 use super::utils::{ConflictSpec, InsertRowNode};
 
 /// Билдер INSERT INTO ... VALUES ...
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InsertBuilder<'a, T = ()> {
     pub(crate) table: Option<ObjectName>,
     pub(crate) columns: SmallVec<[Ident; 8]>,
@@ -185,33 +185,39 @@ impl<'a, T> InsertBuilder<'a, T> {
     /// Выполнить INSERT **без** `RETURNING`. Возвращает `rows_affected`.
     pub async fn exec(mut self) -> ExecResult<u64> {
         let (sql, params) = self.render_sql().map_err(ExecError::from)?;
-        let exec_ctx = self.exec_ctx;
+        self.exec_ctx.execute(&sql, params).await
+    }
 
-        match exec_ctx {
-            ExecCtx::None => Err(ExecError::MissingConnection),
+    pub fn exec_send(
+        mut self,
+    ) -> ExecResult<impl core::future::Future<Output = ExecResult<u64>> + Send + 'static> {
+        let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+        let ctx = self.exec_ctx.clone();
+        ctx.execute_send(sql, params)
+    }
 
-            ExecCtx::Pool(pool) => match pool {
-                #[cfg(feature = "postgres")]
-                DbPool::Postgres(p) => crate::executor::utils::execute_pg(&p, &sql, params).await,
-                #[cfg(feature = "mysql")]
-                DbPool::MySql(p) => crate::executor::utils::execute_mysql(&p, &sql, params).await,
-                #[cfg(feature = "sqlite")]
-                DbPool::Sqlite(p) => crate::executor::utils::execute_sqlite(&p, &sql, params).await,
-            },
-
-            #[cfg(feature = "postgres")]
-            ExecCtx::PgConn(conn) => {
-                crate::executor::transaction_utils::execute_pg_exec(conn, &sql, params).await
-            }
-            #[cfg(feature = "mysql")]
-            ExecCtx::MySqlConn(conn) => {
-                crate::executor::transaction_utils::execute_mysql_exec(conn, &sql, params).await
-            }
-            #[cfg(feature = "sqlite")]
-            ExecCtx::SqliteConn(conn) => {
-                crate::executor::transaction_utils::execute_sqlite_exec(conn, &sql, params).await
-            }
+    pub fn into_send<R>(
+        mut self,
+    ) -> ExecResult<impl core::future::Future<Output = ExecResult<Vec<R>>> + Send + 'static>
+    where
+        R: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'static,
+    {
+        if self.returning.is_empty() {
+            return Err(ExecError::Unsupported(
+                "INSERT без RETURNING: используйте .exec(). Для чтения результатов добавьте .returning(...).".into()
+            ));
         }
+
+        if self.dialect == Dialect::MySQL {
+            return Err(ExecError::Unsupported(
+                "MySQL не поддерживает INSERT ... RETURNING; выполните .exec() и, при необходимости, отдельный SELECT."
+                    .into(),
+            ));
+        }
+
+        let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+        let ctx = self.exec_ctx.clone();
+        ctx.select_send::<R>(sql, params)
     }
 
     // ===== вспомогательные =====

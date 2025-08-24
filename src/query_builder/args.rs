@@ -1,4 +1,6 @@
 use std::fmt;
+use std::marker::PhantomData;
+use std::sync::{Arc, Mutex};
 
 use crate::expression::{self, Expression};
 use crate::param::Param;
@@ -8,27 +10,72 @@ use sqlparser::ast;
 
 use super::{Error, Result};
 
-pub struct QBClosure(Box<dyn FnOnce(QueryBuilder) -> QueryBuilder + Send + 'static>);
+pub struct QBClosure<T>(
+    Arc<
+        Mutex<
+            Option<
+                Box<
+                    dyn for<'a> FnOnce(QueryBuilder<'a, T>) -> QueryBuilder<'a, T> + Send + 'static,
+                >,
+            >,
+        >,
+    >,
+    PhantomData<fn() -> T>,
+);
 
-impl QBClosure {
-    pub fn new<F>(f: F) -> Self
-    where
-        F: FnOnce(QueryBuilder) -> QueryBuilder + Send + 'static,
-    {
-        Self(Box::new(f))
-    }
-
+impl<T> Clone for QBClosure<T> {
     #[inline]
-    /// Применить замыкание, потребив обёртку.
-    pub fn apply(self, qb: QueryBuilder) -> QueryBuilder {
-        (self.0)(qb)
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), PhantomData)
     }
 }
 
-impl fmt::Debug for QBClosure {
+impl<T> QBClosure<T> {
+    #[inline]
+    pub fn new<F>(f: F) -> Self
+    where
+        F: for<'a> FnOnce(QueryBuilder<'a, T>) -> QueryBuilder<'a, T> + Send + 'static,
+    {
+        Self(Arc::new(Mutex::new(Some(Box::new(f)))), PhantomData)
+    }
+
+    /// # Panics
+    /// if called twice, or lock returns error
+    #[inline]
+    pub fn call<'a>(&self, qb: QueryBuilder<'a, T>) -> QueryBuilder<'a, T> {
+        self.try_call(qb).expect("QBClosure already called")
+    }
+
+    /// Более безопасно:
+    #[allow(dead_code)]
+    #[inline]
+    pub fn try_call<'a>(&self, qb: QueryBuilder<'a, T>) -> Result<QueryBuilder<'a, T>> {
+        let mut slot = self.0.lock().map_err(|_| Error::InvalidExpression {
+            reason: "QBClosure: mutex poisoned".into(),
+        })?;
+
+        let f = slot.take().ok_or_else(|| Error::InvalidExpression {
+            reason: "QBClosure already called".into(),
+        })?;
+
+        Ok(f(qb))
+    }
+}
+
+impl<T> fmt::Debug for QBClosure<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Само тело замыкания неотображаемо — выводим метку.
         f.write_str("<closure>")
+    }
+}
+
+impl<T, F> From<F> for QBClosure<T>
+where
+    F: for<'a> FnOnce(QueryBuilder<'a, T>) -> QueryBuilder<'a, T> + Send + 'static,
+{
+    #[inline]
+    fn from(f: F) -> Self {
+        QBClosure::new(f)
     }
 }
 
@@ -37,10 +84,10 @@ impl fmt::Debug for QBClosure {
 /// - подзапрос (`Subquery`) — целый QueryBuilder
 /// - замыкание (`Closure`), в которое мы передаём «пустой» QueryBuilder, а результат — это подзапрос
 #[derive(Debug)]
-pub enum QBArg<'a> {
+pub enum QBArg<'a, T = ()> {
     Expr(Expression),
     Subquery(QueryBuilder<'a>),
-    Closure(QBClosure),
+    Closure(QBClosure<T>),
 }
 
 impl<'a> QBArg<'a> {
@@ -74,7 +121,7 @@ impl<'a> QBArg<'a> {
                 Ok((ast::Expr::Subquery(Box::new(q)), params))
             }
             QBArg::Closure(c) => {
-                let built = c.apply(QueryBuilder::new_empty());
+                let built = c.try_call(QueryBuilder::new_empty())?;
                 let (q, params) = build_subquery(built)?;
                 Ok((ast::Expr::Subquery(Box::new(q)), params))
             }
