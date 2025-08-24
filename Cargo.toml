@@ -5,9 +5,9 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-# default = ["sqlite"]
+default = ["sqlite"]
 # default = ["postgres"]
-default = ["mysql"]
+# default = ["mysql"]
 # базовые фичи для sqlx::Any
 sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]
