@@ -26,6 +26,7 @@ mod order_by;
 mod schema;
 mod select;
 mod sql;
+pub mod typestate;
 mod union;
 mod update;
 mod where_clause;
@@ -41,6 +42,7 @@ pub use insert::InsertBuilder;
 use join::JoinNode;
 use order_by::OrderByNode;
 use select::SelectItemNode;
+pub use typestate::{PoolQuery, TxQuery};
 use union::SetOpNode;
 use where_clause::WhereNode;
 use with::WithItemNode;
@@ -224,6 +226,16 @@ impl<'a, T> QueryBuilder<'a, T> {
     #[inline]
     pub fn optional(self) -> QueryOptional<'a, T> {
         QueryOptional(self)
+    }
+
+    pub(crate) fn pop_pool_and_render(
+        mut self,
+    ) -> ExecResult<(crate::executor::DbPool, String, Vec<crate::param::Param>)> {
+        let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+        match self.exec_ctx {
+            crate::query_builder::ExecCtx::Pool(pool) => Ok((pool, sql, params)),
+            _ => Err(ExecError::NotSendInTx),
+        }
     }
 
     #[inline]

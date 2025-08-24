@@ -139,13 +139,13 @@ fn clear_limit_and_clear_offset_individually() {
 
 #[test]
 fn clear_limit_offset_both() {
-    let mut qb = QB::new_empty()
+    let qb = QB::new_empty()
         .from("t")
         .select(("*",))
         .limit(10)
         .offset(20);
 
-    qb.clear_limit_offset(); // &mut self
+    let qb = qb.clear_limit_offset();
 
     let (q, _) = qb.build_query_ast().expect("ok");
     assert!(

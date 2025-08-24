@@ -162,22 +162,22 @@ impl<'a, T> DeleteBuilder<'a, T> {
         ctx.execute_send(sql, params)
     }
 
-    pub fn into_send<R>(
-        mut self,
-    ) -> ExecResult<impl core::future::Future<Output = ExecResult<Vec<R>>> + Send + 'static>
-    where
-        R: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'static,
-    {
-        if self.returning.is_empty() {
-            return Err(ExecError::Unsupported(
-                "DELETE without RETURNING: use `.exec()` instead.".into(),
-            ));
-        }
+    // pub fn into_send<R>(
+    //     mut self,
+    // ) -> ExecResult<impl core::future::Future<Output = ExecResult<Vec<R>>> + Send + 'static>
+    // where
+    //     R: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'static,
+    // {
+    //     if self.returning.is_empty() {
+    //         return Err(ExecError::Unsupported(
+    //             "DELETE without RETURNING: use `.exec()` instead.".into(),
+    //         ));
+    //     }
 
-        let (sql, params) = self.render_sql().map_err(ExecError::from)?;
-        let ctx = self.exec_ctx.clone();
-        ctx.select_send::<R>(sql, params)
-    }
+    //     let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+    //     let ctx = self.exec_ctx.clone();
+    //     ctx.select_send::<R>(sql, params)
+    // }
 
     // ===== helpers =====
 

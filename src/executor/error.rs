@@ -45,4 +45,7 @@ pub enum Error {
 
     #[error("Unsupported: {0}")]
     Unsupported(Cow<'static, str>),
+
+    #[error("Unable to execute query in transaction")]
+    NotSendInTx,
 }

@@ -57,23 +57,20 @@ impl QueryExecutor {
 
 impl<'tx> TxExecutor<'tx> {
     #[inline]
-    pub fn query<'s, T>(&'s mut self) -> crate::query_builder::QueryBuilder<'s, T> {
-        use crate::query_builder::{ExecCtx, QueryBuilder};
+    pub fn query<'s, T>(&'s mut self) -> crate::query_builder::TxQuery<'s, T> {
+        use crate::query_builder::{ExecCtx, QueryBuilder, TxQuery};
 
         let exec_ctx: ExecCtx<'s> = match self.tx.as_mut() {
             #[cfg(feature = "postgres")]
             Some(DbTx::Postgres(tx)) => ExecCtx::PgConn(tx.as_mut()),
-
             #[cfg(feature = "mysql")]
             Some(DbTx::MySql(tx)) => ExecCtx::MySqlConn(tx.as_mut()),
-
             #[cfg(feature = "sqlite")]
             Some(DbTx::Sqlite(tx)) => ExecCtx::SqliteConn(tx.as_mut()),
-
             None => ExecCtx::None,
         };
-
-        QueryBuilder::new_tx(self.schema.clone(), exec_ctx)
+        let qb = QueryBuilder::new_tx(self.schema.clone(), exec_ctx);
+        TxQuery::new(qb)
     }
 
     pub async fn fetch_typed<T>(

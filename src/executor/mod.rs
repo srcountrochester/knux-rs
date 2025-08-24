@@ -20,7 +20,10 @@ use crate::executor::utils::fetch_typed_pg;
 #[cfg(feature = "sqlite")]
 use crate::executor::utils::fetch_typed_sqlite;
 
-use crate::{param::Param, query_builder::QueryBuilder};
+use crate::{
+    param::Param,
+    query_builder::{PoolQuery, QueryBuilder},
+};
 pub use config::ExecutorConfig;
 pub use error::{Error, Result};
 
@@ -207,8 +210,9 @@ impl QueryExecutor {
     }
 
     /// Начать строить запрос (интерфейс дальше останется как у knex-подобного билдера).
-    pub fn query<T>(&self) -> QueryBuilder<'static, T> {
-        QueryBuilder::new_pool(self.pool.clone(), self.schema.clone())
+    pub fn query<T>(&self) -> crate::query_builder::PoolQuery<'_, T> {
+        let qb = QueryBuilder::new_pool(self.pool.clone(), self.schema.clone());
+        PoolQuery::new(qb)
     }
 
     pub async fn fetch_typed<T>(&self, sql: &str, params: Vec<Param>) -> Result<Vec<T>>

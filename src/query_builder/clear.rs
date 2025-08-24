@@ -98,7 +98,7 @@ impl<'a, T> QueryBuilder<'a, T> {
 
     /// Сбросить LIMIT/OFFSET (на случай, если билдер переиспользуется)
     #[inline]
-    pub fn clear_limit_offset(&mut self) -> &mut Self {
+    pub fn clear_limit_offset(mut self) -> Self {
         self.limit_num = None;
         self.offset_num = None;
         self

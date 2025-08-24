@@ -359,27 +359,27 @@ impl<'a, T> UpdateBuilder<'a, T> {
         self.exec_ctx.execute_send(sql, params)
     }
 
-    // опционально, если есть RETURNING-путь:
-    pub fn into_send<R>(
-        mut self,
-    ) -> ExecResult<impl core::future::Future<Output = ExecResult<Vec<R>>> + Send + 'static>
-    where
-        R: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'static,
-    {
-        if self.returning.is_empty() {
-            return Err(ExecError::Unsupported(
-                "UPDATE without RETURNING: use `.exec()` instead.".into(),
-            ));
-        }
+    // // опционально, если есть RETURNING-путь:
+    // pub fn into_send<R>(
+    //     mut self,
+    // ) -> ExecResult<impl core::future::Future<Output = ExecResult<Vec<R>>> + Send + 'static>
+    // where
+    //     R: for<'r> sqlx::FromRow<'r, DbRow> + Send + Unpin + 'static,
+    // {
+    //     if self.returning.is_empty() {
+    //         return Err(ExecError::Unsupported(
+    //             "UPDATE without RETURNING: use `.exec()` instead.".into(),
+    //         ));
+    //     }
 
-        if self.dialect == Dialect::MySQL {
-            return Err(ExecError::Unsupported(
-                "MySQL не поддерживает UPDATE ... RETURNING; выполните .exec() и, при необходимости, отдельный SELECT."
-                    .into(),
-            ));
-        }
+    //     if self.dialect == Dialect::MySQL {
+    //         return Err(ExecError::Unsupported(
+    //             "MySQL не поддерживает UPDATE ... RETURNING; выполните .exec() и, при необходимости, отдельный SELECT."
+    //                 .into(),
+    //         ));
+    //     }
 
-        let (sql, params) = self.render_sql().map_err(ExecError::from)?;
-        self.exec_ctx.select_send::<R>(sql, params)
-    }
+    //     let (sql, params) = self.render_sql().map_err(ExecError::from)?;
+    //     self.exec_ctx.select_send::<R>(sql, params)
+    // }
 }

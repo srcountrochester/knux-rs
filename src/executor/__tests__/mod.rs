@@ -18,3 +18,6 @@ mod transaction;
 
 #[cfg(test)]
 mod transaction_utils;
+
+#[cfg(test)]
+mod parallel;
