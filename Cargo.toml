@@ -1,6 +1,6 @@
 [package]
 license = "MIT OR Apache-2.0"
-name = "krust"
+name = "knux"
 version = "0.1.0"
 edition = "2024"
 

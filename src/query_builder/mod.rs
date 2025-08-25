@@ -2,6 +2,7 @@ use std::{borrow::Cow, marker::PhantomData};
 
 use crate::{
     executor::{DbPool, DbRow},
+    optimizer::OptimizeConfig,
     param::Param,
     renderer::Dialect,
 };
@@ -82,6 +83,7 @@ pub struct QueryBuilder<'a, T = ()> {
     pub(self) with_recursive: bool,
     pub(self) set_ops: SmallVec<[SetOpNode; 1]>,
     pub(crate) exec_ctx: ExecCtx<'a>,
+    pub(crate) optimize_cfg: OptimizeConfig,
     _t: PhantomData<T>,
 }
 
@@ -110,6 +112,7 @@ impl<'a, T> QueryBuilder<'a, T> {
             with_recursive: false,
             set_ops: smallvec![],
             exec_ctx: ExecCtx::Pool(pool),
+            optimize_cfg: OptimizeConfig::default(),
             _t: PhantomData,
         }
     }
@@ -138,6 +141,7 @@ impl<'a, T> QueryBuilder<'a, T> {
             with_recursive: false,
             set_ops: smallvec![],
             exec_ctx,
+            optimize_cfg: OptimizeConfig::default(),
             _t: PhantomData,
         }
     }
@@ -166,6 +170,7 @@ impl<'a, T> QueryBuilder<'a, T> {
             with_recursive: false,
             set_ops: smallvec![],
             exec_ctx: ExecCtx::None,
+            optimize_cfg: OptimizeConfig::default(),
             _t: PhantomData,
         }
     }
