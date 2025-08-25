@@ -765,7 +765,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "krust"
+name = "knux"
 version = "0.1.0"
 dependencies = [
  "chrono",

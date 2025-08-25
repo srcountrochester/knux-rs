@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 
 use crate::executor::{DbPool, DbRow, Error as ExecError, Result as ExecResult};
+use crate::optimizer::OptimizeConfig;
 use crate::query_builder::args::{ArgList, QBArg};
 use crate::query_builder::ast::FromItem;
 use crate::query_builder::{ExecCtx, QueryBuilder};
@@ -44,6 +45,7 @@ pub struct UpdateBuilder<'a, T> {
     pub(crate) default_schema: Option<String>,
     pub(crate) dialect: Dialect,
     pub(crate) exec_ctx: ExecCtx<'a>,
+    pub(crate) optimize_cfg: OptimizeConfig,
     _t: PhantomData<T>,
 }
 
@@ -63,6 +65,7 @@ impl<'a, T> UpdateBuilder<'a, T> {
             from_items: smallvec![],
             sqlite_or: None,
             exec_ctx: qb.exec_ctx,
+            optimize_cfg: qb.optimize_cfg,
             _t: PhantomData,
         }
     }

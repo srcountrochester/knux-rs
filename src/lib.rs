@@ -1,6 +1,7 @@
 mod __tests__;
 pub mod executor;
 pub mod expression;
+pub mod optimizer;
 pub mod param;
 pub mod query_builder;
 pub mod renderer;

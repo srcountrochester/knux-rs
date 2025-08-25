@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 
 use crate::executor::{DbPool, DbRow, Error as ExecError, Result as ExecResult};
+use crate::optimizer::OptimizeConfig;
 use crate::param::Param;
 use crate::query_builder::ExecCtx;
 use crate::query_builder::insert::utils::expr_last_ident;
@@ -48,6 +49,7 @@ pub struct InsertBuilder<'a, T = ()> {
     pub(crate) default_schema: Option<String>,
     pub(crate) dialect: Dialect,
     pub(crate) exec_ctx: ExecCtx<'a>,
+    pub(crate) optimize_cfg: OptimizeConfig,
     _t: PhantomData<T>,
 }
 
@@ -66,6 +68,7 @@ impl<'a, T> InsertBuilder<'a, T> {
             on_conflict: None,
             insert_ignore: false,
             exec_ctx: qb.exec_ctx,
+            optimize_cfg: qb.optimize_cfg,
             _t: PhantomData,
         }
     }

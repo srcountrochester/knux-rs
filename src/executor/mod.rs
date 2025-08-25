@@ -21,6 +21,7 @@ use crate::executor::utils::fetch_typed_pg;
 use crate::executor::utils::fetch_typed_sqlite;
 
 use crate::{
+    optimizer::{OptimizeConfig, OptimizeConfigBuilder},
     param::Param,
     query_builder::{PoolQuery, QueryBuilder},
 };
@@ -49,6 +50,7 @@ pub enum DbPool {
 pub struct QueryExecutor {
     pub pool: DbPool,
     pub schema: Option<String>,
+    pub(crate) optimize_cfg: OptimizeConfig,
 }
 
 impl QueryExecutor {
@@ -71,6 +73,7 @@ impl QueryExecutor {
             return Ok(Self {
                 pool,
                 schema: cfg.schema.clone(),
+                optimize_cfg: OptimizeConfig::default(),
             });
         }
 
@@ -201,17 +204,23 @@ impl QueryExecutor {
         Ok(Self {
             pool,
             schema: cfg.schema,
+            optimize_cfg: OptimizeConfig::default(),
         })
     }
 
     /// Альтернатива: обернуть уже созданный пул (например, специфичный под БД).
     pub fn from_pool(pool: DbPool, schema: Option<String>) -> Self {
-        Self { pool, schema }
+        Self {
+            pool,
+            schema,
+            optimize_cfg: OptimizeConfig::default(),
+        }
     }
 
     /// Начать строить запрос (интерфейс дальше останется как у knex-подобного билдера).
-    pub fn query<T>(&self) -> crate::query_builder::PoolQuery<'_, T> {
-        let qb = QueryBuilder::new_pool(self.pool.clone(), self.schema.clone());
+    pub fn query<T>(&self) -> PoolQuery<'_, T> {
+        let qb = QueryBuilder::new_pool(self.pool.clone(), self.schema.clone())
+            .with_optimize(self.optimize_cfg.clone());
         PoolQuery::new(qb)
     }
 
