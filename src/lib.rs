@@ -11,7 +11,8 @@ pub mod type_helpers;
 mod utils;
 
 pub use executor::{ExecutorConfig, QueryExecutor};
-pub use query_builder::QueryBuilder;
+pub use expression::helpers::*;
+pub use query_builder::{DeleteBuilder, InsertBuilder, QueryBuilder, UpdateBuilder};
 pub use runtime_ext::SpawnExt;
 pub use type_helpers::QBClosureHelper;
 

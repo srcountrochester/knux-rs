@@ -73,7 +73,10 @@ fn render_returning(w: &mut SqlWriter, items: &[R::SelectItem], cfg: &SqlRenderC
     }
 }
 
-/// Рендер `UPDATE ... SET ... [FROM ...] [WHERE ...] [RETURNING ...]`
+/// Рендер `UPDATE ... SET ... [FROM ...] [WHERE ...] [RETURNING ...]`.
+///
+/// Поддерживает любые выражения в правой части присваивания, в том числе
+/// арифметику: `SET "balance" = "balance" + $1` / `SET "balance" = "balance" - 5`.
 pub fn render_update(u: &R::Update, cfg: &SqlRenderCfg, cap: usize) -> String {
     let mut w = SqlWriter::new(cap, cfg.placeholders);
 

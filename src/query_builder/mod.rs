@@ -34,6 +34,7 @@ mod where_clause;
 mod with;
 
 use ast::FromItem;
+pub use delete::DeleteBuilder;
 use distinct::DistinctOnNode;
 pub use error::{BuilderErrorList, Error, Result};
 pub use exec_ctx::ExecCtx;
@@ -45,6 +46,7 @@ use order_by::OrderByNode;
 use select::SelectItemNode;
 pub use typestate::{PoolQuery, TxQuery};
 use union::SetOpNode;
+pub use update::UpdateBuilder;
 use where_clause::WhereNode;
 use with::WithItemNode;
 

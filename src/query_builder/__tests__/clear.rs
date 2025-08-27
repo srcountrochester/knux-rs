@@ -155,22 +155,6 @@ fn clear_limit_offset_both() {
 }
 
 #[test]
-fn clear_counters_pushes_todo_error() {
-    let err = QB::new_empty()
-        .from("t")
-        .select(("*",))
-        .clear_counters()
-        .to_sql()
-        .unwrap_err();
-
-    let msg = err.to_string();
-    assert!(
-        msg.contains("clear_counters(): TODO"),
-        "expected TODO message, got: {msg}"
-    );
-}
-
-#[test]
 fn clear_router_unknown_and_unsupported() {
     // неизвестный оператор
     let err1 = QB::new_empty()

@@ -104,10 +104,15 @@ impl<'a, T> QueryBuilder<'a, T> {
         self
     }
 
-    /// Сбросить счётчики инкрементов/декрементов (пока не реализовано).
+    /// Сбросить счётчики инкрементов/декрементов.
+    ///
+    /// Замечание: счётчики относятся к `UPDATE`. Вызывайте этот метод на `UpdateBuilder`,
+    /// т.е. после `.update(...)`: `qb.update(...).clear_counters()`.
+    /// Вызов на `QueryBuilder` не делает ничего, но и не приводит к ошибке.
     #[inline]
-    pub fn clear_counters(mut self) -> Self {
-        self.push_builder_error("clear_counters(): TODO — ещё не реализовано");
+    pub fn clear_counters(self) -> Self {
+        // В контексте общего билдера счётчиков нет — делаем no-op.
+        // Сообщение об ошибке убирать, иначе мешает пайплайну вызовов.
         self
     }
 

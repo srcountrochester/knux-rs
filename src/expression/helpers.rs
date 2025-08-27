@@ -2,13 +2,9 @@ use super::Expression;
 use crate::param::Param;
 use smallvec::smallvec;
 use sqlparser::{
-    ast::{
-        self, Expr as SqlExpr, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, Statement,
-        WildcardAdditionalOptions, helpers::attached_token::AttachedToken,
-    },
+    ast::{self, Expr as SqlExpr, SelectItem, SelectItemQualifiedWildcardKind, SetExpr, Statement},
     dialect::GenericDialect,
     parser::Parser,
-    tokenizer::{Token, TokenWithSpan},
 };
 
 pub trait RawArg {
@@ -42,7 +38,7 @@ pub fn col(name: &str) -> Expression {
 /// Параметр с bind'ом, эквивалент `?`, значение кладётся в params
 pub fn val<T: Into<Param>>(v: T) -> Expression {
     Expression {
-        expr: ast::Expr::Value(ast::Value::Number("?".into(), false).into()), // плейсхолдер
+        expr: ast::Expr::Value(ast::Value::Placeholder("?".into()).into()),
         alias: None,
         params: smallvec![v.into()],
         mark_distinct_for_next: false,
