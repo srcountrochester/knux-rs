@@ -1,6 +1,6 @@
 use crate::expression::helpers::val;
 use crate::query_builder::QueryBuilder;
-use crate::tests::dialect_test_helpers::qi;
+use crate::tests::dialect_test_helpers::{ph, qi};
 use crate::type_helpers::QBClosureHelper;
 
 type QB = QueryBuilder<'static, ()>;
@@ -58,12 +58,12 @@ fn from_closure_subquery_with_alias() {
         .expect("to_sql");
 
     assert_eq!(params.len(), 1);
-    assert!(matches!(params[0], crate::param::Param::I32(1)));
+    assert!(matches!(params[0], crate::Param::I32(1)));
 
     let sql = norm(&sql);
 
     assert!(
-        sql.contains(&format!("FROM (SELECT ?) AS {}", qi("t1"))),
+        sql.contains(&format!("FROM (SELECT {}) AS {}", ph(1), qi("t1"))),
         "got: {sql}"
     );
 }

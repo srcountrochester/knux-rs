@@ -26,3 +26,16 @@ pub fn col_list(cols: &[&str]) -> String {
     // "id", "name" / `id`, `name`
     cols.iter().map(|c| qi(c)).collect::<Vec<_>>().join(", ")
 }
+
+#[inline]
+pub fn ph(n: usize) -> String {
+    #[cfg(feature = "postgres")]
+    {
+        format!("${}", n)
+    }
+
+    #[cfg(any(feature = "mysql", feature = "sqlite"))]
+    {
+        "?".to_string()
+    }
+}

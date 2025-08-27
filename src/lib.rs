@@ -12,6 +12,7 @@ mod utils;
 
 pub use executor::{ExecutorConfig, QueryExecutor};
 pub use expression::helpers::*;
+pub use param::Param;
 pub use query_builder::{DeleteBuilder, InsertBuilder, QueryBuilder, UpdateBuilder};
 pub use runtime_ext::SpawnExt;
 pub use type_helpers::QBClosureHelper;
