@@ -6,6 +6,7 @@ pub struct OptimizeConfig {
 
     // Агрессивные
     pub predicate_pushdown: bool,
+    pub predicate_pullup: bool,
     pub flatten_simple_subqueries: bool,
     pub dedup_in_list: bool,
 
@@ -52,6 +53,7 @@ impl OptimizeConfigBuilder {
         self.cfg.simplify_exists = true;
 
         self.cfg.predicate_pushdown = false;
+        self.cfg.predicate_pullup = false;
         self.cfg.flatten_simple_subqueries = false;
         self.cfg.dedup_in_list = false;
         self.cfg.in_to_exists = false;
@@ -63,6 +65,7 @@ impl OptimizeConfigBuilder {
         self.cfg.simplify_exists = true;
 
         self.cfg.predicate_pushdown = true;
+        self.cfg.predicate_pullup = true;
         self.cfg.flatten_simple_subqueries = true;
         self.cfg.dedup_in_list = true;
 
@@ -72,6 +75,7 @@ impl OptimizeConfigBuilder {
     pub fn all(mut self) -> Self {
         self.cfg.rm_subquery_order_by = true;
         self.cfg.simplify_exists = true;
+        self.cfg.predicate_pullup = true;
         self.cfg.predicate_pushdown = true;
         self.cfg.flatten_simple_subqueries = true;
         self.cfg.dedup_in_list = true;
@@ -104,6 +108,15 @@ impl OptimizeConfigBuilder {
     }
     pub fn without_predicate_pushdown(mut self) -> Self {
         self.cfg.predicate_pushdown = false;
+        self
+    }
+
+    pub fn with_predicate_pullup(mut self) -> Self {
+        self.cfg.predicate_pullup = true;
+        self
+    }
+    pub fn without_predicate_pullup(mut self) -> Self {
+        self.cfg.predicate_pullup = false;
         self
     }
 

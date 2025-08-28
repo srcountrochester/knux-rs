@@ -1,12 +1,27 @@
 mod __tests__;
 pub mod config;
+mod dedup_in_list;
+mod flatten_simple_subqueries;
+mod in_to_exists;
 mod passes;
+mod predicate_pullup;
+mod predicate_pushdown;
+mod rm_subquery_order_by;
+mod simplify_exists;
+mod utils;
 
 pub use config::{OptimizeConfig, OptimizeConfigBuilder};
 use sqlparser::ast as S;
 
 use crate::QueryBuilder;
 use crate::QueryExecutor;
+use dedup_in_list::dedup_in_list;
+use flatten_simple_subqueries::flatten_simple_subqueries;
+use in_to_exists::in_to_exists;
+use predicate_pullup::predicate_pullup;
+use predicate_pushdown::predicate_pushdown;
+use rm_subquery_order_by::rm_subquery_order_by;
+use simplify_exists::simplify_exists;
 
 impl<'a, T> QueryBuilder<'a, T> {
     /// Жёстко задать конфигурацию оптимизаций для конкретного запроса.
@@ -36,22 +51,25 @@ impl<'a, T> QueryBuilder<'a, T> {
 
     pub(crate) fn optimize_ast(&self, stmt: &mut S::Statement) {
         if self.optimize_cfg.rm_subquery_order_by {
-            passes::rm_subquery_order_by(stmt);
+            rm_subquery_order_by(stmt);
         }
         if self.optimize_cfg.simplify_exists {
-            passes::simplify_exists(stmt);
+            simplify_exists(stmt);
         }
         if self.optimize_cfg.flatten_simple_subqueries {
-            passes::flatten_simple_subqueries(stmt);
+            flatten_simple_subqueries(stmt);
         }
         if self.optimize_cfg.predicate_pushdown {
-            passes::predicate_pushdown(stmt);
+            predicate_pushdown(stmt);
+        }
+        if self.optimize_cfg.predicate_pullup {
+            predicate_pullup(stmt);
         }
         if self.optimize_cfg.dedup_in_list {
-            passes::dedup_in_list(stmt);
+            dedup_in_list(stmt);
         }
         if self.optimize_cfg.in_to_exists {
-            passes::in_to_exists(stmt);
+            in_to_exists(stmt);
         }
     }
 }
@@ -90,26 +108,29 @@ pub fn apply(stmt: &mut S::Statement, cfg: &OptimizeConfig) {
 
     // --- Консервативные ---
     if cfg.rm_subquery_order_by {
-        passes::rm_subquery_order_by(stmt);
+        rm_subquery_order_by(stmt);
     }
     if cfg.simplify_exists {
-        passes::simplify_exists(stmt);
+        simplify_exists(stmt);
     }
 
     // --- Агрессивные ---
     if cfg.predicate_pushdown {
-        passes::predicate_pushdown(stmt);
+        predicate_pushdown(stmt);
+    }
+    if cfg.predicate_pullup {
+        predicate_pullup(stmt);
     }
     if cfg.flatten_simple_subqueries {
-        passes::flatten_simple_subqueries(stmt);
+        flatten_simple_subqueries(stmt);
     }
     if cfg.dedup_in_list {
-        passes::dedup_in_list(stmt);
+        dedup_in_list(stmt);
     }
 
     // --- Вручную ---
     if cfg.in_to_exists {
-        passes::in_to_exists(stmt);
+        in_to_exists(stmt);
     }
 }
 
@@ -132,6 +153,7 @@ pub fn apply_query(q: &mut S::Query, cfg: &OptimizeConfig) {
 fn is_noop(cfg: &OptimizeConfig) -> bool {
     !(cfg.rm_subquery_order_by
         || cfg.simplify_exists
+        || cfg.predicate_pullup
         || cfg.predicate_pushdown
         || cfg.flatten_simple_subqueries
         || cfg.dedup_in_list
