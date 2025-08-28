@@ -1,10 +1,10 @@
 //! Интеграционные тесты dedup_in_list: билдер → оптимизатор → финальный SQL.
 
-use crate::expression::helpers::{col, val};
+use crate::expression::helpers::col;
 use crate::lit;
 use crate::optimizer::{OptimizeConfig, OptimizeConfigBuilder};
 use crate::query_builder::QueryBuilder;
-use crate::tests::dialect_test_helpers::{ph, qi};
+use crate::tests::dialect_test_helpers::qi;
 
 type QB = QueryBuilder<'static, ()>;
 

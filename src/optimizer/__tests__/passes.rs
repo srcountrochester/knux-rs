@@ -6,11 +6,11 @@ use sqlparser::parser::Parser;
 
 use crate::optimizer::dedup_in_list::*;
 use crate::optimizer::flatten_simple_subqueries::*;
+use crate::optimizer::in_to_exists::*;
 use crate::optimizer::predicate_pullup::*;
 use crate::optimizer::predicate_pushdown::*;
 use crate::optimizer::rm_subquery_order_by::*;
 use crate::optimizer::simplify_exists::*;
-use crate::optimizer::in_to_exists::*;
 
 /// Проверяем: `ORDER BY` удаляется у подзапроса в FROM, если нет LIMIT/OFFSET/FETCH.
 #[test]
@@ -527,4 +527,44 @@ fn in_to_exists_not_in_is_untouched_ast() {
     };
 
     assert!(ok, "NOT IN должен остаться без изменений");
+}
+
+/// Подменяет `a IN (SELECT b FROM t)` на `EXISTS(SELECT 1 FROM t WHERE b = a)`.
+/// Ожидаем: выражение WHERE содержит EXISTS и корреляцию `b = a`.
+#[test]
+fn in_to_exists_basic_positive_in() {
+    let d = GenericDialect {};
+    let mut stmt = Parser::parse_sql(&d, "SELECT * FROM u WHERE a IN (SELECT b FROM t)")
+        .unwrap()
+        .remove(0);
+
+    in_to_exists(&mut stmt);
+
+    let s = stmt.to_string();
+    assert!(s.to_uppercase().contains("EXISTS"), "ожидали EXISTS");
+    assert!(
+        s.contains("b = a") || s.contains("b = a"),
+        "ожидали корреляцию b = a, got: {s}"
+    );
+}
+
+/// Не переписывает `NOT IN` из-за отличий NULL-семантики.
+/// Ожидаем: исходное выражение сохраняется, EXISTS отсутствует.
+#[test]
+fn in_to_exists_does_not_touch_not_in() {
+    let d = GenericDialect {};
+    let sql = "SELECT * FROM u WHERE a NOT IN (SELECT b FROM t)";
+    let mut stmt = Parser::parse_sql(&d, sql).unwrap().remove(0);
+
+    in_to_exists(&mut stmt);
+
+    let s = stmt.to_string();
+    assert!(
+        s.to_uppercase().contains("NOT IN"),
+        "NOT IN должен остаться"
+    );
+    assert!(
+        !s.to_uppercase().contains("EXISTS"),
+        "EXISTS не должен появиться"
+    );
 }

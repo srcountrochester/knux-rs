@@ -106,15 +106,18 @@ pub fn apply(stmt: &mut S::Statement, cfg: &OptimizeConfig) {
         return;
     }
 
-    // --- Консервативные ---
     if cfg.rm_subquery_order_by {
         rm_subquery_order_by(stmt);
     }
     if cfg.simplify_exists {
         simplify_exists(stmt);
     }
-
-    // --- Агрессивные ---
+    if cfg.dedup_in_list {
+        dedup_in_list(stmt);
+    }
+    if cfg.in_to_exists {
+        in_to_exists(stmt);
+    }
     if cfg.predicate_pushdown {
         predicate_pushdown(stmt);
     }
@@ -123,14 +126,6 @@ pub fn apply(stmt: &mut S::Statement, cfg: &OptimizeConfig) {
     }
     if cfg.flatten_simple_subqueries {
         flatten_simple_subqueries(stmt);
-    }
-    if cfg.dedup_in_list {
-        dedup_in_list(stmt);
-    }
-
-    // --- Вручную ---
-    if cfg.in_to_exists {
-        in_to_exists(stmt);
     }
 }
 

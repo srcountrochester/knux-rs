@@ -1,8 +1,7 @@
-use sqlparser::ast::{self as S, Insert, Join, JoinConstraint, JoinOperator};
-
 use crate::optimizer::utils::{
-    and_merge, projection_is_direct_columns, select_is_simple_no_cardinality,
+    and_merge, projection_is_direct_columns, select_is_simple_no_cardinality, walk_statement_mut,
 };
+use sqlparser::ast as S;
 
 /// Сплющивание тривиальных подзапросов `SELECT ... FROM (SELECT ...) AS s`.
 ///
@@ -17,9 +16,7 @@ use crate::optimizer::utils::{
 ///
 /// Функция **мутирует** переданный `Statement` и ничего не возвращает.
 #[inline]
-pub fn flatten_simple_subqueries(stmt: &mut S::Statement) {
-    // --- helpers (те же критерии, что и в pull-up) ---
-
+pub fn flatten_simple_subqueries(stmt: &mut sqlparser::ast::Statement) {
     #[inline]
     fn query_has_no_limit_or_order(q: &S::Query) -> bool {
         q.order_by.is_none() && q.limit_clause.is_none() && q.fetch.is_none()
@@ -34,6 +31,7 @@ pub fn flatten_simple_subqueries(stmt: &mut S::Statement) {
                 }
                 match subquery.body.as_ref() {
                     S::SetExpr::Select(sel) => {
+                        let sel = sel.as_ref();
                         select_is_simple_no_cardinality(sel)
                             && sel.from.len() == 1
                             && sel.from[0].joins.is_empty()
@@ -46,155 +44,12 @@ pub fn flatten_simple_subqueries(stmt: &mut S::Statement) {
         }
     }
 
-    // --- обход дерева ---
-
-    fn visit_expr(e: &mut S::Expr) {
-        use S::Expr::*;
-        match e {
-            Subquery(q) => visit_query(q),
-            Exists { subquery, .. } => visit_query(subquery),
-            InSubquery { expr, subquery, .. } => {
-                visit_expr(expr);
-                visit_query(subquery);
-            }
-            UnaryOp { expr, .. } => visit_expr(expr),
-            BinaryOp { left, right, .. } => {
-                visit_expr(left);
-                visit_expr(right);
-            }
-            Between {
-                expr, low, high, ..
-            } => {
-                visit_expr(expr);
-                visit_expr(low);
-                visit_expr(high);
-            }
-            Cast { expr, .. } | Extract { expr, .. } => visit_expr(expr),
-            Nested(inner) => visit_expr(inner),
-            S::Expr::Case {
-                operand,
-                conditions,
-                else_result,
-                ..
-            } => {
-                if let Some(op) = operand.as_mut() {
-                    visit_expr(op);
-                }
-                for w in conditions.iter_mut() {
-                    visit_expr(&mut w.condition);
-                    visit_expr(&mut w.result);
-                }
-                if let Some(er) = else_result.as_mut() {
-                    visit_expr(er);
-                }
-            }
-            S::Expr::Function(S::Function { args, .. }) => {
-                use sqlparser::ast::{FunctionArg, FunctionArgExpr, FunctionArguments};
-                match args {
-                    FunctionArguments::List(list) => {
-                        for a in &mut list.args {
-                            match a {
-                                FunctionArg::Unnamed(FunctionArgExpr::Expr(x))
-                                | FunctionArg::Named {
-                                    arg: FunctionArgExpr::Expr(x),
-                                    ..
-                                } => visit_expr(x),
-                                _ => {}
-                            }
-                        }
-                    }
-                    FunctionArguments::Subquery(q) => visit_query(q),
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn visit_join(j: &mut Join) {
-        match &mut j.join_operator {
-            JoinOperator::Join(c)
-            | JoinOperator::Inner(c)
-            | JoinOperator::Left(c)
-            | JoinOperator::LeftOuter(c)
-            | JoinOperator::Right(c)
-            | JoinOperator::RightOuter(c)
-            | JoinOperator::FullOuter(c)
-            | JoinOperator::Semi(c)
-            | JoinOperator::LeftSemi(c)
-            | JoinOperator::RightSemi(c)
-            | JoinOperator::Anti(c)
-            | JoinOperator::LeftAnti(c)
-            | JoinOperator::RightAnti(c)
-            | JoinOperator::StraightJoin(c) => {
-                if let JoinConstraint::On(e) = c {
-                    visit_expr(e);
-                }
-            }
-            JoinOperator::AsOf {
-                match_condition,
-                constraint,
-            } => {
-                visit_expr(match_condition);
-                if let JoinConstraint::On(e) = constraint {
-                    visit_expr(e);
-                }
-            }
-            JoinOperator::CrossJoin | JoinOperator::CrossApply | JoinOperator::OuterApply => {}
-        }
-    }
-
-    fn visit_table_with_joins(twj: &mut S::TableWithJoins) {
-        visit_table_factor(&mut twj.relation);
-        for j in &mut twj.joins {
-            visit_table_factor(&mut j.relation);
-            visit_join(j);
-        }
-    }
-    fn visit_table_factor(tf: &mut S::TableFactor) {
-        match tf {
-            S::TableFactor::Derived { subquery, .. } => visit_query(subquery),
-            S::TableFactor::NestedJoin {
-                table_with_joins, ..
-            } => visit_table_with_joins(table_with_joins),
-            _ => {}
-        }
-    }
-
-    // Собственно «flatten»: заменить Derived → Table и перенести WHERE внутрь наружу.
     fn try_flatten_in_select(sel: &mut S::Select) {
-        // вниз по дереву сначала
-        for it in &mut sel.projection {
-            if let S::SelectItem::UnnamedExpr(e) | S::SelectItem::ExprWithAlias { expr: e, .. } = it
-            {
-                visit_expr(e);
-            }
-        }
-        if let Some(e) = &mut sel.selection {
-            visit_expr(e);
-        }
-        if let Some(e) = &mut sel.having {
-            visit_expr(e);
-        }
-        if let S::GroupByExpr::Expressions(exprs, _) = &mut sel.group_by {
-            for e in exprs {
-                visit_expr(e);
-            }
-        }
-        for twj in &mut sel.from {
-            visit_table_with_joins(twj);
-        }
-
-        // допустим только один источник без JOIN'ов
-        if sel.from.len() != 1 || !sel.from[0].joins.is_empty() {
+        if sel.from.is_empty() {
             return;
         }
-
-        // проверка без удержания &mut заимствования
-        let can_flatten = {
-            let rel = &sel.from[0].relation;
-            derived_is_trivial(rel)
-        };
+        let can_flatten = matches!(&sel.from[0].relation, S::TableFactor::Derived { .. })
+            && derived_is_trivial(&sel.from[0].relation);
         if !can_flatten {
             return;
         }
@@ -222,7 +77,7 @@ pub fn flatten_simple_subqueries(stmt: &mut S::Statement) {
                     } => {
                         *base_alias = outer_alias.clone();
                     }
-                    _ => return, // по критериям выше сюда не дойдём, но оставим предохранитель
+                    _ => return, // защитный ранний выход
                 }
                 sel.from[0].relation = inner_twj.relation;
             }
@@ -232,85 +87,14 @@ pub fn flatten_simple_subqueries(stmt: &mut S::Statement) {
         and_merge(&mut sel.selection, inner_where.take());
     }
 
-    fn visit_set_expr(se: &mut S::SetExpr) {
-        match se {
-            S::SetExpr::Select(s) => {
-                let s_mut = s.as_mut();
-                try_flatten_in_select(s_mut);
+    // проход по всему Statement
+    walk_statement_mut(
+        stmt,
+        &mut |q: &mut S::Query, _top_level: bool| {
+            if let S::SetExpr::Select(sel_box) = q.body.as_mut() {
+                try_flatten_in_select(sel_box.as_mut());
             }
-            S::SetExpr::Query(q) => visit_query(q),
-            S::SetExpr::SetOperation { left, right, .. } => {
-                visit_set_expr(left);
-                visit_set_expr(right);
-            }
-            _ => {}
-        }
-    }
-
-    fn visit_query(q: &mut S::Query) {
-        if let Some(w) = &mut q.with {
-            for cte in &mut w.cte_tables {
-                visit_query(&mut cte.query);
-            }
-        }
-        visit_set_expr(q.body.as_mut());
-    }
-
-    // точка входа
-    match stmt {
-        S::Statement::Query(q) => visit_query(q),
-        S::Statement::Insert(Insert { source, .. }) => {
-            if let Some(q) = source.as_mut() {
-                visit_query(q);
-            }
-        }
-        S::Statement::Update {
-            selection,
-            assignments,
-            from,
-            table: twj,
-            ..
-        } => {
-            for a in assignments {
-                visit_expr(&mut a.value);
-            }
-            if let Some(e) = selection {
-                visit_expr(e);
-            }
-            visit_table_with_joins(twj);
-            if let Some(kind) = from {
-                match kind {
-                    S::UpdateTableFromKind::BeforeSet(list)
-                    | S::UpdateTableFromKind::AfterSet(list) => {
-                        for t in list {
-                            visit_table_with_joins(t);
-                        }
-                    }
-                }
-            }
-        }
-        S::Statement::Delete(S::Delete {
-            selection,
-            using,
-            from,
-            ..
-        }) => {
-            if let Some(e) = selection {
-                visit_expr(e);
-            }
-            match from {
-                S::FromTable::WithoutKeyword(list) | S::FromTable::WithFromKeyword(list) => {
-                    for twj in list {
-                        visit_table_with_joins(twj);
-                    }
-                }
-            }
-            if let Some(list) = using {
-                for t in list {
-                    visit_table_with_joins(t);
-                }
-            }
-        }
-        _ => {}
-    }
+        },
+        &mut |_e: &mut S::Expr| {},
+    );
 }
