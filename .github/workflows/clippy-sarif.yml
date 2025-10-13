@@ -19,6 +19,6 @@ jobs:
       - name: Run clippy (JSON) -> SARIF
         run: cargo clippy --all-targets --all-features --message-format=json | clippy-sarif > clippy.sarif || true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: clippy.sarif
