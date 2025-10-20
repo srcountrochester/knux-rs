@@ -25,7 +25,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "runtime-tokio-rustls",
     "macros",
 ] }
-sqlparser = "0.58"
+sqlparser = "0.59"
 thiserror = "2"
 url = "2"
 humantime = "2"
